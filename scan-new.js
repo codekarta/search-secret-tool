@@ -1,0 +1,1594 @@
+#!/usr/bin/env node
+
+/**
+ * ============================================================================
+ * Hardcoded Secrets & Sensitive Data Scanner
+ * ============================================================================
+ * Scans directories and codebases for hardcoded credentials, API keys,
+ * connection strings, tokens, and cryptographic hashes based on the
+ * detection patterns reference.
+ *
+ * Generates an interactive, standalone HTML audit report with zero external dependencies.
+ *
+ * Usage:
+ *   node scan_secrets.js [path-to-scan] [options]
+ * ============================================================================
+ */
+
+const fs = require('fs');
+const path = require('path');
+
+// ---------------------------------------------------------------------------
+// 1. Tool Metadata & Banner
+// ---------------------------------------------------------------------------
+const APP_METADATA = {
+  name: 'IBM SecretScanner',
+  author: 'Manish Bansal',
+  email: 'manish.bansal@example.com',
+  version: '1.2.0',
+  versionDate: '2026-08-17',
+  description: 'Hardcoded Secrets & Sensitive Data Detection Tool'
+};
+
+function printBanner() {
+  console.log(`
+\x1b[36m╔══════════════════════════════════════════════════════════════════════════════╗\x1b[0m
+\x1b[36m║\x1b[0m   \x1b[1m\x1b[36m🛡️  ${APP_METADATA.name}\x1b[0m \x1b[90m- ${APP_METADATA.description}\x1b[0m
+\x1b[36m╠══════════════════════════════════════════════════════════════════════════════╣\x1b[0m
+\x1b[36m║\x1b[0m  \x1b[1mCreated by:\x1b[0m  \x1b[37m${APP_METADATA.author}\x1b[0m (\x1b[34m${APP_METADATA.email}\x1b[0m)
+\x1b[36m║\x1b[0m  \x1b[1mVersion:\x1b[0m     \x1b[32mv${APP_METADATA.version}\x1b[0m \x1b[90m| Released: ${APP_METADATA.versionDate}\x1b[0m
+\x1b[36m╚══════════════════════════════════════════════════════════════════════════════╝\x1b[0m`);
+}
+
+// ---------------------------------------------------------------------------
+// 2. CLI Arguments & Configuration Parsing
+// ---------------------------------------------------------------------------
+const args = process.argv.slice(2);
+
+function getFormattedTimestamp() {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const year = now.getFullYear();
+  const month = pad(now.getMonth() + 1);
+  const day = pad(now.getDate());
+  const hours = pad(now.getHours());
+  const minutes = pad(now.getMinutes());
+  const seconds = pad(now.getSeconds());
+  return `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`;
+}
+
+function printHelp() {
+  printBanner();
+  console.log(`
+\x1b[1mUSAGE:\x1b[0m
+  node scan_secrets.js <path-to-scan> [options]
+
+\x1b[1mARGUMENTS:\x1b[0m
+  <path-to-scan>          Directory or file to scan (default: current directory '.')
+
+\x1b[1mOPTIONS:\x1b[0m
+  -o, --output <file>     HTML report destination path (default: './secret-scan-report_YYYY-MM-DD_HH-mm-ss.html')
+  --no-html               Disable HTML report generation
+  --json <file>           Export raw scan findings to a JSON file
+  --unmask                Do not mask secret values in the terminal or report
+  --severity <level>      Filter scan results by minimum severity (CRITICAL, HIGH, MEDIUM, LOW)
+  -q, --quiet             Quiet mode (suppress terminal finding summaries)
+  -v, --verbose           Verbose output (logs every scanned file)
+  -h, --help              Show this help menu and exit
+
+\x1b[1mEXAMPLES:\x1b[0m
+  node scan_secrets.js .
+  node scan_secrets.js ./src --output audit-report.html
+  node scan_secrets.js /var/www/project --json findings.json --severity HIGH
+`);
+  process.exit(0);
+}
+
+if (args.includes('-h') || args.includes('--help')) {
+  printHelp();
+}
+
+let targetPath = '.';
+let htmlOutput = null;
+let jsonOutput = null;
+let generateHtml = true;
+let maskSecrets = true;
+let minSeverity = 'LOW';
+let quietMode = false;
+let verboseMode = false;
+
+for (let i = 0; i < args.length; i++) {
+  const arg = args[i];
+  if (arg === '-o' || arg === '--output') {
+    htmlOutput = args[++i];
+  } else if (arg === '--no-html') {
+    generateHtml = false;
+  } else if (arg === '--json') {
+    jsonOutput = args[++i];
+  } else if (arg === '--unmask') {
+    maskSecrets = false;
+  } else if (arg === '--severity') {
+    minSeverity = (args[++i] || 'LOW').toUpperCase();
+  } else if (arg === '-q' || arg === '--quiet') {
+    quietMode = true;
+  } else if (arg === '-v' || arg === '--verbose') {
+    verboseMode = true;
+  } else if (!arg.startsWith('-')) {
+    targetPath = arg;
+  }
+}
+
+if (!htmlOutput) {
+  htmlOutput = `secret-scan-report_${getFormattedTimestamp()}.html`;
+}
+
+const resolvedTarget = path.resolve(targetPath);
+if (!fs.existsSync(resolvedTarget)) {
+  console.error(`\x1b[31m[ERROR] Target path does not exist:\x1b[0m ${resolvedTarget}\n`);
+  process.exit(1);
+}
+
+// ---------------------------------------------------------------------------
+// 2. Exclusion Rules
+// ---------------------------------------------------------------------------
+const EXCLUDE_DIRS = new Set([
+  'node_modules', 'dist', 'build', 'target', 'vendor',
+  '.git', '.pnpm', 'coverage', '__pycache__', '.idea', '.vscode',
+  '.next', '.nuxt', 'out', 'bin', 'obj', '.bundle', '.gradle',
+  '.output', 'bundles', 'staticfiles', '.turbo', '.cache',
+  '.venv', 'venv', 'env', 'site-packages', '.tox'
+]);
+
+const EXCLUDE_EXTS = new Set([
+  // Binaries, Archives & Compiled
+  '.class', '.jar', '.war', '.ear', '.pyc', '.pyo', '.min.js', '.min.css', '.map',
+  '.lock', '.bin', '.exe', '.dll', '.so', '.dylib', '.wasm', '.pak', '.dat',
+  // Media & Fonts
+  '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.webp', '.avif', '.bmp', '.tiff',
+  '.woff', '.woff2', '.ttf', '.eot', '.otf',
+  '.mp3', '.mp4', '.avi', '.mov', '.wav', '.flac', '.zip', '.tar', '.gz', '.7z', '.rar',
+  '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx'
+]);
+
+const EXCLUDE_FILES = new Set([
+  'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'Cargo.lock', 'composer.lock', 'Gemfile.lock', 'go.sum',
+  path.basename(__filename), 'secret-scan-report.html'
+]);
+
+function isExcludedFile(fileName, fullPath = '') {
+  if (EXCLUDE_FILES.has(fileName)) return true;
+  if (/^secret-scan-report.*\.html$/i.test(fileName)) return true;
+  if (/\.min\.(js|css)$/i.test(fileName)) return true;
+  if (/\.(bundle|chunk)\.(js|css)$/i.test(fileName)) return true;
+  // Hashed build bundles (e.g. index-C-0LHoUd.js, chunk-A1B2C3.js) in public/assets or dist
+  if (/^[\w-]+-[a-zA-Z0-9_-]{6,}\.(js|css)$/i.test(fileName)) return true;
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// 3. Master Pattern Definitions & Severity Mapping
+// ---------------------------------------------------------------------------
+const SEVERITY_LEVELS = {
+  CRITICAL: 4,
+  HIGH: 3,
+  MEDIUM: 2,
+  LOW: 1
+};
+
+const PATTERNS = [
+  // --- Category: Database Credentials & Connection Strings ---
+  {
+    id: 'DB_CONN_URI',
+    name: 'Database Connection URI with Credentials',
+    category: 'Database Connection Strings',
+    severity: 'CRITICAL',
+    description: 'Matches standard database connection strings with embedded plaintext username & password (Postgres, MySQL, Oracle, MSSQL, MongoDB, Redis, etc.).',
+    remediation: 'Externalize credentials into environment variables injected at runtime or use a managed Secrets Vault / IAM database authentication.',
+    regex: /\b(?:mongodb(?:\+srv)?|postgres|postgresql|mysql|mariadb|oracle|sqlserver|mssql|db2|h2|sqlite|sybase|redis|rediss|amqp|amqps|clickhouse|cassandra|snowflake|redshift|jdbc:(?:oracle|sqlserver|mysql|mariadb|postgresql|postgres|db2|h2|sqlite|sybase|clickhouse|snowflake|redshift|[a-z0-9_-]+):(?:\/\/)?|https?|ftps?):\/\/[^:\s"'`]+:(?!(?:\$\{|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))[^@\s"'`]{3,}@[^\s"'`]+/gi
+  },
+  {
+    id: 'ORACLE_JDBC_URL',
+    name: 'Oracle Thin/OCI JDBC URL Credentials',
+    category: 'Database Connection Strings',
+    severity: 'CRITICAL',
+    description: 'Matches Oracle-specific JDBC driver URLs containing embedded user/password combinations.',
+    remediation: 'Use Oracle Wallets, connection pooling with environment variables, or JNDI datasource configuration.',
+    regex: /\bjdbc:oracle:(?:thin|oci)?:[^\/\s"'`]+\/(?!(?:\$\{|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))[^@\s"'`]{3,}@[^\s"'`]+/gi
+  },
+  {
+    id: 'ADONET_ODBC_CONN',
+    name: 'ADO.NET / ODBC Semicolon Connection String',
+    category: 'Database Connection Strings',
+    severity: 'HIGH',
+    description: 'Matches Microsoft SQL Server, Oracle, DB2, and generic ODBC/ADO.NET connection strings containing user credentials.',
+    remediation: 'Use Windows Integrated Security (SSPI), Azure Managed Identity, or retrieve connection strings from Azure Key Vault / App Configuration.',
+    regex: /(?:\b(?:Data\s*Source|Server|Initial\s*Catalog|Database|jdbc:[a-z0-9_:-]+|Driver|Provider)\b[^;"'\n]*;\s*)*(?:User\s*Id|uid|user|username)\s*=\s*[^;"'\n]*;\s*(?:Password|pwd)\s*=\s*["']?(?!(?:\$\{|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))[^;"'\s]{3,}["']?/gi
+  },
+  {
+    id: 'DB_CONFIG_PASSWORD_KEY',
+    name: 'Database Password Key in Config File',
+    category: 'Database Connection Strings',
+    severity: 'HIGH',
+    description: 'Matches database password keys in configuration files (Spring, Quarkus, .properties, .yaml, .ini).',
+    remediation: 'Replace plaintext values with environment variable place-holders like ${DB_PASSWORD}.',
+    regex: /(?:datasource|jdbc|db|database|spring\.datasource|oracle|mssql|sqlserver|db2|h2|sqlite|mysql|mariadb|postgres|postgresql|mongodb|redis|cassandra|clickhouse|keystore|truststore)[._-](?:pass(?:word|wd)|pwd|pass[._-]?code|access[._-]?code)\s*=\s*(?!(?:\$\{|#|\s*$|change[_-]?me|your[_-]|example|dummy|placeholder))[^\s#]{3,}/gi,
+    fileFilter: (filePath) => {
+      const ext = path.extname(filePath).toLowerCase();
+      const base = path.basename(filePath).toLowerCase();
+      return ext === '.properties' || ext === '.ini' || ext === '.yaml' || ext === '.yml' || ext === '.conf' || ext === '.cfg' || base.startsWith('.env');
+    }
+  },
+
+  // --- Category: Passwords & Assignments ---
+  {
+    id: 'HARDCODED_PASSWORD_ASSIGN',
+    name: 'Hardcoded Password / Key Variable Assignment',
+    category: 'Passwords & Credentials',
+    severity: 'HIGH',
+    description: 'Matches variable/key assignments targeting passwords, passcodes, passphrases, and credentials enclosed in quotes.',
+    remediation: 'Load credentials dynamically from environment variables or a configuration vault.',
+    regex: /(?<!(?:errors?|err|validation|state|msg|message|alert|warning|label|placeholder|title|desc|description)\.)(?:["']?(?:pass(?:word|wd)|pwd|pass[._-]?phrase|pass[._-]?code|access[._-]?code|db[._-]?(?:pass(?:word|wd)?|pwd)|user[._-]?(?:pass(?:word|wd)?|pwd)|admin[._-]?(?:pass(?:word|wd)?|pwd)|root[._-]?(?:pass(?:word|wd)?|pwd)|master[._-]?(?:pass(?:word|wd)?|pwd)|client[._-]?(?:pass(?:word|wd)?|pwd)|auth[._-]?(?:pass(?:word|wd)?|pwd)|keystore[._-]?(?:pass(?:word|wd)?|pwd)|truststore[._-]?(?:pass(?:word|wd)?|pwd))["']?)\s*(?:[:=]|=>|:=)\s*(["'`])(?!(?:\$\{|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|[^\r\n"']*(?:required|invalid|must\s+be|cannot\s+be|characters|match)|[\^~><=]|\d+(?:px|em|rem|%|vh|vw|pt)\b|\s*\1))([^\r\n\1]{3,})\1/gi,
+    fileFilter: (filePath) => path.basename(filePath).toLowerCase() !== 'package.json'
+  },
+  {
+    id: 'TYPED_PASSWORD_DECLARATION',
+    name: 'Strongly-Typed Source Password Declaration',
+    category: 'Passwords & Credentials',
+    severity: 'HIGH',
+    description: 'Matches strongly-typed variable declarations (String, const, let, final) holding passwords in source code.',
+    remediation: 'Remove the hardcoded literal and read from config or system properties.',
+    regex: /(?:String|final|const|let|var|val)\s+(?:pass(?:word|wd)|pwd|pass[._-]?phrase|pass[._-]?code|access[._-]?code|db[._-]?(?:pass(?:word|wd)?|pwd)|user[._-]?(?:pass(?:word|wd)?|pwd)|admin[._-]?(?:pass(?:word|wd)?|pwd)|root[._-]?(?:pass(?:word|wd)?|pwd)|secret[._-]?key)\s*=\s*["'](?!(?:\$\{|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))[^"'\s]{3,}["']/gi
+  },
+  {
+    id: 'CREDENTIAL_SETTER_CALL',
+    name: 'Credential Setter / Method Call with Literal',
+    category: 'Passwords & Credentials',
+    severity: 'MEDIUM',
+    description: 'Matches method calls like setPassword("..."), authenticate("..."), login("...") with inline string constants.',
+    remediation: 'Pass runtime credential variables rather than hardcoded string parameters.',
+    regex: /\b(?:set|with)(?:Password|Passcode|AccessCode|ClientSecret|SecretKey)\s*\([^)]*["'](?!(?:\$\{|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))[^"'\s]{3,}["']|\b(?:createCredentials|authenticate|login|getConnection)\s*\([^)]*["'](?!(?:\$\{|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))[^"'\s]{3,}["']/gi
+  },
+  {
+    id: 'DICT_COLLECTION_SECRET_CALL',
+    name: 'Dictionary / Map / Collection Method or Subscript Call with Secret',
+    category: 'Passwords & Credentials',
+    severity: 'HIGH',
+    description: 'Matches dictionary/map methods and callable structures (dict.add("key", "val"), dict.put, dict.set, dict("key", "val"), dict["key", "val"]).',
+    remediation: 'Externalize credentials and avoid hardcoding plaintext secrets in collection builders.',
+    regex: /\b[a-zA-Z0-9_$]+(?:\.[a-zA-Z0-9_$]+)*(?:\s*\.\s*(?:add|put|set|insert|push|set_secret|add_secret|put_secret|append))?\s*[\(\[]\s*(["'`])(?:[a-zA-Z0-9_\s-]*(?:pass(?:word|wd)?|pwd|pass[._-]?phrase|pass[._-]?code|access[._-]?code|secret(?:[._-]?key)?|api[._-]?(?:key|token|secret)|client[._-]?(?:secret|key)|jwt(?:[._-]?(?:token|secret|key))?|token(?:[._-]?secret)?|auth[._-]?(?:key|token|secret)|encryption[._-]?(?:key|secret)|encrypted[._-]?(?:pass(?:word|wd)?|pwd|key|secret)|master[._-]?key|signing[._-]?key|private[._-]?key|access[._-]?(?:secret|token)|webhook[._-]?secret|session[._-]?secret|service[._-]?(?:key|secret)|db[._-]?(?:pass(?:word|wd)?|pwd)|user[._-]?(?:pass(?:word|wd)?|pwd)|admin[._-]?(?:pass(?:word|wd)?|pwd)|root[._-]?(?:pass(?:word|wd)?|pwd))[a-zA-Z0-9_\s-]*)\1\s*,\s*(["'`])(?!(?:\$\{|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|[^\r\n"']*(?:required|invalid|must\s+be|cannot\s+be|characters|match)|[\^~><=]|\d+(?:px|em|rem|%|vh|vw|pt)\b|\s*\2))([^\r\n\2]{3,})\2\s*[\)\]]/gi,
+    fileFilter: (filePath) => path.basename(filePath).toLowerCase() !== 'package.json'
+  },
+  {
+    id: 'DICT_SUBSCRIPT_ASSIGNMENT',
+    name: 'Dictionary / Map Subscript Index Secret Assignment',
+    category: 'Passwords & Credentials',
+    severity: 'HIGH',
+    description: 'Matches dictionary/map indexing assignments (dict["password"] = "secret", dict["encryptedKey"] = "val").',
+    remediation: 'Load secret values from environment variables or secure storage.',
+    regex: /\b[a-zA-Z0-9_$]+(?:\.[a-zA-Z0-9_$]+)*\s*\[\s*(["'`])(?:[a-zA-Z0-9_\s-]*(?:pass(?:word|wd)?|pwd|pass[._-]?phrase|pass[._-]?code|access[._-]?code|secret(?:[._-]?key)?|api[._-]?(?:key|token|secret)|client[._-]?(?:secret|key)|jwt(?:[._-]?(?:token|secret|key))?|token(?:[._-]?secret)?|auth[._-]?(?:key|token|secret)|encryption[._-]?(?:key|secret)|encrypted[._-]?(?:pass(?:word|wd)?|pwd|key|secret)|master[._-]?key|signing[._-]?key|private[._-]?key|access[._-]?(?:secret|token)|webhook[._-]?secret|session[._-]?secret|service[._-]?(?:key|secret)|db[._-]?(?:pass(?:word|wd)?|pwd)|user[._-]?(?:pass(?:word|wd)?|pwd)|admin[._-]?(?:pass(?:word|wd)?|pwd)|root[._-]?(?:pass(?:word|wd)?|pwd))[a-zA-Z0-9_\s-]*)\1\s*\]\s*=\s*(["'`])(?!(?:\$\{|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|[^\r\n"']*(?:required|invalid|must\s+be|cannot\s+be|characters|match)|[\^~><=]|\d+(?:px|em|rem|%|vh|vw|pt)\b|\s*\2))([^\r\n\2]{3,})\2/gi,
+    fileFilter: (filePath) => path.basename(filePath).toLowerCase() !== 'package.json'
+  },
+
+  // --- Category: Cloud Providers, LLMs & Well-Known SaaS ---
+  {
+    id: 'AWS_ACCESS_KEY_ID',
+    name: 'AWS Access Key ID',
+    category: 'Cloud & SaaS API Keys',
+    severity: 'CRITICAL',
+    description: 'Matches standard 20-character AWS Access Key IDs (AKIA...).',
+    remediation: 'Revoke and rotate the compromised AWS IAM access key immediately in AWS IAM Console.',
+    regex: /\bAKIA[0-9A-Z]{16}\b/g
+  },
+  {
+    id: 'AWS_SECRET_KEY_ASSIGN',
+    name: 'AWS Secret Access Key Assignment',
+    category: 'Cloud & SaaS API Keys',
+    severity: 'CRITICAL',
+    description: 'Matches assignments of 40-character AWS Secret Access Keys.',
+    remediation: 'Rotate the corresponding AWS IAM Access Key and migrate to AWS IAM Roles for EC2/ECS/Lambda.',
+    regex: /(?:aws[._-]?secret[._-]?(?:access[._-]?)?key|AWS[._-]?SECRET[._-]?(?:ACCESS[._-]?)?KEY)\s*[:=]\s*["']?[A-Za-z0-9/+=]{40}["']?/gi
+  },
+  {
+    id: 'GITHUB_TOKEN',
+    name: 'GitHub Personal Access / OAuth Token',
+    category: 'Cloud & SaaS API Keys',
+    severity: 'CRITICAL',
+    description: 'Matches classic GitHub PATs (ghp_), fine-grained tokens (github_pat_), OAuth (gho_), and server tokens (ghs_).',
+    remediation: 'Revoke this token in GitHub Settings -> Developer Settings -> Personal Access Tokens.',
+    regex: /\b(?:ghp_[a-zA-Z0-9]{36}|gho_[a-zA-Z0-9]{36}|ghu_[a-zA-Z0-9]{36}|ghs_[a-zA-Z0-9]{36}|ghr_[a-zA-Z0-9]{36}|github_pat_[a-zA-Z0-9]{22}_[a-zA-Z0-9]{59})\b/g
+  },
+  {
+    id: 'LLM_PROVIDER_KEY',
+    name: 'LLM Provider API Key (OpenAI, Anthropic, HuggingFace, Gemini)',
+    category: 'Cloud & SaaS API Keys',
+    severity: 'CRITICAL',
+    description: 'Matches API key signatures for OpenAI (sk-proj-...), Anthropic (sk-ant-...), HuggingFace (hf_...), and Google Gemini / Cloud (AIza...).',
+    remediation: 'Revoke and rotate the API key in the respective AI provider developer dashboard.',
+    regex: /\bsk-(?:proj-|svcacct-)?[a-zA-Z0-9_\-]{32,}\b|\bsk-ant-(?:api[0-9]{2}-)?[a-zA-Z0-9_\-]{32,}\b|\bhf_[a-zA-Z0-9]{34,}\b|\bAIza[0-9A-Za-z-_]{35}\b/g
+  },
+  {
+    id: 'GENERIC_LLM_KEY_ASSIGN',
+    name: 'Generic LLM Provider Key Assignment',
+    category: 'Cloud & SaaS API Keys',
+    severity: 'HIGH',
+    description: 'Matches explicit assignments to OpenAI, Anthropic, Cohere, Replicate, or LLM token variables.',
+    remediation: 'Inject LLM keys via environment variables (e.g. process.env.OPENAI_API_KEY).',
+    regex: /(?:openai|anthropic|cohere|replicate|huggingface|llm)[._-]*(?:api[._-]*)?(?:key|token|secret)\s*[:=]\s*["'](?!(?:\$\{|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))[a-zA-Z0-9_\-]{16,}["']/gi
+  },
+  {
+    id: 'SAAS_TOKEN_THIRD_PARTY',
+    name: 'Third-Party SaaS Token (Slack, Stripe, NPM, SendGrid)',
+    category: 'Cloud & SaaS API Keys',
+    severity: 'CRITICAL',
+    description: 'Matches tokens for Slack (xoxb/xopp/xoxs), Stripe (sk_live/test), NPM (npm_), and SendGrid (SG.).',
+    remediation: 'Rotate the third-party SaaS credentials in your service dashboard.',
+    regex: /\bxox[baprs]-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24,34}\b|\b(?:sk|rk)_(?:live|test)_[0-9a-zA-Z]{24,99}\b|\bnpm_[a-zA-Z0-9]{36}\b|\bSG\.[a-zA-Z0-9_\-]{22}\.[a-zA-Z0-9_\-]{43}\b/g
+  },
+  {
+    id: 'ARTIFACTORY_JFROG_NEXUS',
+    name: 'Artifactory / JFrog / Nexus Token',
+    category: 'Cloud & SaaS API Keys',
+    severity: 'HIGH',
+    description: 'Matches JFrog/Artifactory API keys (AKCP8...), reference tokens (cmVmdHsk...), and package repository credential variables.',
+    remediation: 'Revoke and rotate package registry tokens and configure credentials via ~/.npmrc or ~/.m2/settings.xml using CI secrets.',
+    regex: /\bAKCP8[a-zA-Z0-9]{60}\b|\bcmVmdHsk[a-zA-Z0-9+/=]{60,}\b|(?:artifactory|jfrog|nexus)[._-]*(?:api[._-]*)?(?:key|token|password|secret)\s*[:=]\s*["'](?!(?:\$\{|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))[a-zA-Z0-9_\-\.\+/=]{10,}["']/gi
+  },
+  {
+    id: 'APPDYNAMICS_KEY',
+    name: 'AppDynamics Agent Account Access Key',
+    category: 'Cloud & SaaS API Keys',
+    severity: 'MEDIUM',
+    description: 'Matches AppDynamics APM agent account access key assignments.',
+    remediation: 'Store the AppDynamics account access key in APM configuration files outside source control.',
+    regex: /(?:appdynamics|appd)[._-]*(?:agent[._-]*)?(?:account[._-]*)?(?:access[._-]*)?key\s*[:=]\s*["']?[a-zA-Z0-9_\-]{20,}["']?|appdynamics\.agent\.accountAccessKey\s*=\s*[^\s#]+/gi
+  },
+
+  // --- Category: Generic Developer Secrets & Tokens ---
+  {
+    id: 'GENERIC_DEV_SECRET',
+    name: 'Generic Developer Secret / Token / API Key',
+    category: 'Generic Developer Secrets',
+    severity: 'HIGH',
+    description: 'Matches variable/key assignments targeting secrets, API keys, JWT tokens, access tokens, and developer credentials enclosed in quotes.',
+    remediation: 'Audit the purpose of this key, replace with a secure config loader, and rotate if exposed in git.',
+    regex: /(?:["']?(?:token|jwt(?:[._-]?(?:token|secret|key))?|secret(?:[._-]?key)?|api[._-]?(?:key|token|secret)|client[._-]?(?:secret|key)|master[._-]?key|encryption[._-]?key|signing[._-]?key|private[._-]?key|access[._-]?(?:secret|token)|webhook[._-]?secret|session[._-]?secret|auth[._-]?(?:key|token|secret)|token[._-]?secret|service[._-]?(?:key|secret))["']?)\s*(?:[:=]|=>|:=)\s*(["'`])(?!(?:\$\{|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|required|invalid|must\s+be|cannot\s+be|[\^~><=]|\d+(?:px|em|rem|%|vh|vw|pt)\b|\s*\1))([^\r\n\1]{3,})\1/gi,
+    fileFilter: (filePath) => path.basename(filePath).toLowerCase() !== 'package.json'
+  },
+
+  // --- Category: Authentication Tokens & Cryptographic Hashes ---
+  {
+    id: 'JWT_TOKEN',
+    name: 'Raw JSON Web Token (JWT)',
+    category: 'Auth Tokens & Cryptographic Hashes',
+    severity: 'HIGH',
+    description: 'Matches three-part Base64URL-encoded JWT strings (eyJ...).',
+    remediation: 'Ensure test or session tokens are not hardcoded in source files. Expire the token if production data is contained.',
+    regex: /\beyJ[A-Za-z0-9-_=]+\.eyJ[A-Za-z0-9-_=]+\.[A-Za-z0-9-_.+/=]+\b/g
+  },
+  {
+    id: 'BEARER_AUTH_HEADER',
+    name: 'Bearer Authorization Header / Variable',
+    category: 'Auth Tokens & Cryptographic Hashes',
+    severity: 'HIGH',
+    description: 'Matches hardcoded Bearer token headers in HTTP requests or client configs.',
+    remediation: 'Fetch OAuth/OIDC access tokens dynamically at runtime.',
+    regex: /(?:Authorization\s*[:=]\s*["']?Bearer\s+|Bearer\s+)eyJ[A-Za-z0-9-_=]{10,}/gi
+  },
+  {
+    id: 'BCRYPT_HASH',
+    name: 'Bcrypt Password Hash',
+    category: 'Auth Tokens & Cryptographic Hashes',
+    severity: 'MEDIUM',
+    description: 'Matches modular crypt format Bcrypt password hashes ($2a$, $2b$, $2y$).',
+    remediation: 'Store hashed credentials in the database rather than hardcoding in seed files or source code.',
+    regex: /\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}/g
+  },
+  {
+    id: 'SHA_CREDENTIAL_HASH',
+    name: 'SHA-256 / SHA-512 Hash Assigned to Secret Field',
+    category: 'Auth Tokens & Cryptographic Hashes',
+    severity: 'MEDIUM',
+    description: 'Matches 64-char (SHA-256) or 128-char (SHA-512) hexadecimal digests assigned to password or secret properties.',
+    remediation: 'Avoid hardcoded password hashes in configuration.',
+    regex: /(?:pass(?:word|wd)|pwd|pass[._-]?code|access[._-]?code|secret|pass[._-]?phrase|api[._-]?key)\s*[:=]\s*["'](?:[a-fA-F0-9]{64}|[a-fA-F0-9]{128})["']/gi
+  },
+  {
+    id: 'MD5_SHA1_CREDENTIAL_HASH',
+    name: 'MD5 / SHA-1 Hash Assigned to Secret Field',
+    category: 'Auth Tokens & Cryptographic Hashes',
+    severity: 'LOW',
+    description: 'Matches 32-char (MD5) or 40-char (SHA-1) hashes assigned to secret fields.',
+    remediation: 'MD5 and SHA-1 are cryptographically broken. Migrate to modern password hashing (Argon2id, Bcrypt) and store in database.',
+    regex: /(?:pass(?:word|wd)|pwd|pass[._-]?code|access[._-]?code|secret|pass[._-]?phrase)\s*[:=]\s*["'](?:[a-fA-F0-9]{32}|[a-fA-F0-9]{40})["']/gi
+  },
+  {
+    id: 'BASIC_AUTH_HEADER',
+    name: 'HTTP Basic Auth Header / Variable',
+    category: 'Auth Tokens & Cryptographic Hashes',
+    severity: 'HIGH',
+    description: 'Matches Base64-encoded username:password pairs in Authorization: Basic headers.',
+    remediation: 'Replace hardcoded Basic auth headers with dynamic token generation or environment configuration.',
+    regex: /(?:Authorization\s*[:=]\s*["']?Basic\s+|Basic\s+)[A-Za-z0-9+/]{16,}={0,2}/gi
+  },
+  {
+    id: 'BASE64_SECRET_VAR',
+    name: 'Explicit Base64 Secret Variable Assignment',
+    category: 'Auth Tokens & Cryptographic Hashes',
+    severity: 'MEDIUM',
+    description: 'Matches Base64-encoded secret and key variable definitions.',
+    remediation: 'Ensure encoded keys are stored in secure key management services.',
+    regex: /(?:base64[._-]?secret|encoded[._-]?password|base64[._-]?key)\s*[:=]\s*["'][A-Za-z0-9+/]{20,}={0,2}["']/gi
+  },
+
+  // --- Category: Committed Environment Files ---
+  {
+    id: 'COMMITTED_ENV_SECRET',
+    name: 'Committed .env Variable Secret',
+    category: 'Environment Variables',
+    severity: 'HIGH',
+    description: 'Matches sensitive variable names (PASS, SECRET, KEY, TOKEN) in committed .env files with values >= 6 chars.',
+    remediation: 'Add .env files to .gitignore and distribute secrets via environment templates (.env.example) and CI/CD secret stores.',
+    regex: /^(?:[A-Z0-9_]*(?:PASS(?:WORD|WD)?|PASS[._-]?CODE|ACCESS[._-]?CODE|SECRET|API[._-]?KEY|TOKEN|PRIVATE[._-]?KEY|AUTH[._-]?KEY)[A-Z0-9_]*)\s*=\s*(?!(?:\$\{|\{\{|#|\s*$|change[_-]?me|default|your[_-]|example|dummy|placeholder|<|TODO))[^\s#]{6,}/gm,
+    fileFilter: (filePath) => {
+      const base = path.basename(filePath).toLowerCase();
+      return base.startsWith('.env') || filePath.endsWith('.env');
+    }
+  }
+];
+
+// ---------------------------------------------------------------------------
+// 4. Utility Functions: Secret Masking & Context Extraction
+// ---------------------------------------------------------------------------
+function maskValue(value) {
+  if (!value) return '****';
+  const cleanVal = value.trim();
+  if (cleanVal.length <= 8) {
+    return '****';
+  }
+  const prefix = cleanVal.substring(0, Math.min(6, Math.floor(cleanVal.length / 4)));
+  const suffix = cleanVal.substring(cleanVal.length - Math.min(4, Math.floor(cleanVal.length / 5)));
+  return `${prefix}****${suffix}`;
+}
+
+function getLineAndColumn(content, index) {
+  const textBefore = content.substring(0, index);
+  const lines = textBefore.split('\n');
+  const lineNo = lines.length;
+  const colNo = lines[lines.length - 1].length + 1;
+  return { lineNo, colNo };
+}
+
+function extractContextLines(content, lineNo, contextRadius = 2) {
+  const lines = content.split(/\r?\n/);
+  const startLine = Math.max(1, lineNo - contextRadius);
+  const endLine = Math.min(lines.length, lineNo + contextRadius);
+  
+  const snippetLines = [];
+  for (let i = startLine; i <= endLine; i++) {
+    snippetLines.push({
+      line: i,
+      isTarget: i === lineNo,
+      text: lines[i - 1]
+    });
+  }
+  return snippetLines;
+}
+
+// ---------------------------------------------------------------------------
+// 5. File Discovery, Live Progress Bar & Recursive Scanner
+// ---------------------------------------------------------------------------
+class ProgressBar {
+  constructor(total, options = {}) {
+    this.total = Math.max(1, total);
+    this.current = 0;
+    this.barLength = options.barLength || 25;
+    this.isTTY = Boolean(process.stdout.isTTY);
+    this.lastRenderTime = 0;
+    this.lastLoggedPercent = -1;
+    this.quiet = Boolean(options.quiet);
+    this.verbose = Boolean(options.verbose);
+  }
+
+  update(current, currentFileRel = '') {
+    this.current = current;
+    if (this.quiet) return;
+
+    const percent = Math.min(100, Math.floor((this.current / this.total) * 100));
+    const now = Date.now();
+
+    if (this.verbose) {
+      console.log(`\x1b[90m[${percent}%] (${this.current}/${this.total}) Scanning: ${currentFileRel}\x1b[0m`);
+      return;
+    }
+
+    if (this.isTTY) {
+      // Throttle TTY redraws to at most once every 35ms (except first and last item) to prevent I/O bottleneck
+      if (current < this.total && now - this.lastRenderTime < 35) {
+        return;
+      }
+      this.lastRenderTime = now;
+
+      const completedChars = Math.round((this.current / this.total) * this.barLength);
+      const remainingChars = Math.max(0, this.barLength - completedChars);
+      const bar = '█'.repeat(completedChars) + '░'.repeat(remainingChars);
+
+      const termWidth = process.stdout.columns || 80;
+      const prefix = `\x1b[36m[${bar}]\x1b[0m \x1b[1m\x1b[37m${String(percent).padStart(3)}%\x1b[0m \x1b[90m(${this.current}/${this.total})\x1b[0m \x1b[33mScanning:\x1b[0m `;
+      
+      const plainPrefixLength = `[${bar}] ${String(percent).padStart(3)}% (${this.current}/${this.total}) Scanning: `.length;
+      const availableSpace = Math.max(10, termWidth - plainPrefixLength - 3);
+
+      let displayFile = currentFileRel;
+      if (displayFile.length > availableSpace) {
+        displayFile = '...' + displayFile.slice(-(availableSpace - 3));
+      }
+
+      process.stdout.write(`\r\x1b[K${prefix}\x1b[1m${displayFile}\x1b[0m`);
+    } else {
+      // Non-TTY environment (CI / piped / background execution)
+      const milestone = Math.floor(percent / 10) * 10;
+      if (milestone > this.lastLoggedPercent || current === this.total) {
+        this.lastLoggedPercent = milestone;
+        console.log(`[Scanning Progress] ${percent}% (${this.current}/${this.total} files) - ${currentFileRel}`);
+      }
+    }
+  }
+
+  finish() {
+    if (this.quiet) return;
+    if (this.isTTY && !this.verbose) {
+      // Clear line so summary table starts on a clean line
+      process.stdout.write('\r\x1b[K');
+    }
+  }
+}
+
+function collectCandidateFiles(target) {
+  const stat = fs.statSync(target);
+  if (stat.isFile()) {
+    const ext = path.extname(target).toLowerCase();
+    const base = path.basename(target);
+    if (!EXCLUDE_EXTS.has(ext) && !isExcludedFile(base, target)) {
+      return [target];
+    }
+    return [];
+  }
+
+  const fileList = [];
+  function walk(currentDir) {
+    let entries;
+    try {
+      entries = fs.readdirSync(currentDir, { withFileTypes: true });
+    } catch (err) {
+      return;
+    }
+
+    for (const entry of entries) {
+      const fullPath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        if (!EXCLUDE_DIRS.has(entry.name)) {
+          walk(fullPath);
+        }
+      } else if (entry.isFile()) {
+        const ext = path.extname(entry.name).toLowerCase();
+        if (EXCLUDE_EXTS.has(ext) || isExcludedFile(entry.name, fullPath)) {
+          continue;
+        }
+        fileList.push(fullPath);
+      }
+    }
+  }
+
+  walk(target);
+  return fileList;
+}
+
+function scanFileSystem(target, rootDir, findings = [], stats = { filesScanned: 0, bytesScanned: 0, errors: 0 }) {
+  const candidateFiles = collectCandidateFiles(target);
+  const totalFiles = candidateFiles.length;
+
+  if (!quietMode && !verboseMode) {
+    console.log(`\x1b[90mDiscovered \x1b[1m${totalFiles.toLocaleString()}\x1b[0m\x1b[90m eligible files to scan. Please wait...\x1b[0m\n`);
+  }
+
+  if (totalFiles === 0) {
+    return findings;
+  }
+
+  const progressBar = new ProgressBar(totalFiles, { quiet: quietMode, verbose: verboseMode });
+
+  for (let i = 0; i < candidateFiles.length; i++) {
+    const fullPath = candidateFiles[i];
+    const relPath = path.relative(rootDir, fullPath) || path.basename(fullPath);
+    progressBar.update(i + 1, relPath);
+    scanSingleFile(fullPath, rootDir, findings, stats);
+  }
+
+  progressBar.finish();
+  return findings;
+}
+
+function scanSingleFile(fullPath, rootDir, findings, stats) {
+  stats.filesScanned++;
+
+  let content;
+  try {
+    const fileStat = fs.statSync(fullPath);
+    // Ignore files larger than 10MB to avoid freezing
+    if (fileStat.size > 10 * 1024 * 1024) return;
+    stats.bytesScanned += fileStat.size;
+
+    content = fs.readFileSync(fullPath, 'utf8');
+  } catch (err) {
+    stats.errors++;
+    return;
+  }
+
+  // Quick binary heuristic check: skip files with excessive null bytes
+  if (content.includes('\u0000')) {
+    return;
+  }
+
+  // Skip minified JS/CSS bundle files (very long single lines)
+  const ext = path.extname(fullPath).toLowerCase();
+  if ((ext === '.js' || ext === '.mjs' || ext === '.cjs' || ext === '.css') && content.length > 5000) {
+    const firstChunk = content.substring(0, 3000);
+    const lines = firstChunk.split(/\r?\n/);
+    if (lines.some(line => line.length > 1000)) {
+      return;
+    }
+  }
+
+  const relPath = path.relative(rootDir, fullPath) || path.basename(fullPath);
+
+  for (const pattern of PATTERNS) {
+    if (pattern.fileFilter && !pattern.fileFilter(fullPath)) {
+      continue;
+    }
+
+    // Filter by CLI minSeverity
+    if (SEVERITY_LEVELS[pattern.severity] < SEVERITY_LEVELS[minSeverity]) {
+      continue;
+    }
+
+    pattern.regex.lastIndex = 0;
+    let match;
+
+    while ((match = pattern.regex.exec(content)) !== null) {
+      const rawMatch = match[0];
+      const matchIndex = match.index;
+      const { lineNo, colNo } = getLineAndColumn(content, matchIndex);
+      const contextLines = extractContextLines(content, lineNo, 2);
+
+      findings.push({
+        id: `SEC-${findings.length + 1}`,
+        ruleId: pattern.id,
+        ruleName: pattern.name,
+        category: pattern.category,
+        severity: pattern.severity,
+        description: pattern.description,
+        remediation: pattern.remediation,
+        file: relPath,
+        absolutePath: fullPath,
+        line: lineNo,
+        column: colNo,
+        rawSecret: rawMatch,
+        maskedSecret: maskValue(rawMatch),
+        context: contextLines
+      });
+
+      // Avoid infinite loops for zero-length matches
+      if (pattern.regex.lastIndex === matchIndex) {
+        pattern.regex.lastIndex++;
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 6. Interactive HTML Report Generator
+// ---------------------------------------------------------------------------
+function escapeHtml(str) {
+  if (!str) return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function generateHtmlReport(findings, stats, targetDir, outputPath) {
+  const criticalCount = findings.filter(f => f.severity === 'CRITICAL').length;
+  const highCount = findings.filter(f => f.severity === 'HIGH').length;
+  const mediumCount = findings.filter(f => f.severity === 'MEDIUM').length;
+  const lowCount = findings.filter(f => f.severity === 'LOW').length;
+
+  const categoriesMap = {};
+  for (const f of findings) {
+    categoriesMap[f.category] = (categoriesMap[f.category] || 0) + 1;
+  }
+
+  const categoryEntries = Object.entries(categoriesMap).sort((a, b) => b[1] - a[1]);
+  const findingsJson = JSON.stringify(findings).replace(/</g, '\\u003c');
+
+  const htmlContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IBM SecretScanner - Security Audit Report</title>
+  <style>
+    :root {
+      --bg-primary: #0b0f19;
+      --bg-secondary: #111827;
+      --bg-card: #1e293b;
+      --bg-hover: #283548;
+      --border-color: #334155;
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      
+      --critical-color: #ef4444;
+      --critical-bg: rgba(239, 68, 68, 0.15);
+      --critical-border: rgba(239, 68, 68, 0.4);
+      
+      --high-color: #f97316;
+      --high-bg: rgba(249, 115, 22, 0.15);
+      --high-border: rgba(249, 115, 22, 0.4);
+      
+      --medium-color: #eab308;
+      --medium-bg: rgba(234, 179, 8, 0.15);
+      --medium-border: rgba(234, 179, 8, 0.4);
+      
+      --low-color: #3b82f6;
+      --low-bg: rgba(59, 130, 246, 0.15);
+      --low-border: rgba(59, 130, 246, 0.4);
+      
+      --accent-color: #06b6d4;
+      --accent-gradient: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%);
+      --card-radius: 12px;
+      --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.6;
+      padding: 2rem 1.5rem;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1300px;
+      margin: 0 auto;
+    }
+
+    /* Header Section */
+    header {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--card-radius);
+      padding: 2rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+      position: relative;
+      overflow: hidden;
+    }
+
+    header::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      background: var(--accent-gradient);
+    }
+
+    .header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 1.5rem;
+    }
+
+    .title-group h1 {
+      font-size: 1.85rem;
+      font-weight: 700;
+      letter-spacing: -0.025em;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .shield-icon {
+      color: var(--accent-color);
+      width: 32px;
+      height: 32px;
+    }
+
+    .subtitle {
+      color: var(--text-secondary);
+      margin-top: 0.35rem;
+      font-size: 0.95rem;
+    }
+
+    .meta-info {
+      display: flex;
+      gap: 1.5rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      padding: 0.75rem 1.25rem;
+      border-radius: 8px;
+      font-size: 0.85rem;
+    }
+
+    .meta-item {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .meta-label {
+      color: var(--text-muted);
+      text-transform: uppercase;
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+    }
+
+    .meta-val {
+      color: var(--text-primary);
+      font-weight: 500;
+      font-family: monospace;
+    }
+
+    /* Stats Overview Cards */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 2rem;
+    }
+
+    .stat-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--card-radius);
+      padding: 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transition: var(--transition);
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+    }
+
+    .stat-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 15px -3px rgba(0, 0, 0, 0.4);
+    }
+
+    .stat-info .stat-value {
+      font-size: 2.2rem;
+      font-weight: 800;
+      line-height: 1;
+      margin-bottom: 0.35rem;
+    }
+
+    .stat-info .stat-name {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+    }
+
+    .stat-badge {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+    }
+
+    .stat-card.critical .stat-value { color: var(--critical-color); }
+    .stat-card.critical .stat-badge { background: var(--critical-bg); color: var(--critical-color); border: 1px solid var(--critical-border); }
+    
+    .stat-card.high .stat-value { color: var(--high-color); }
+    .stat-card.high .stat-badge { background: var(--high-bg); color: var(--high-color); border: 1px solid var(--high-border); }
+    
+    .stat-card.medium .stat-value { color: var(--medium-color); }
+    .stat-card.medium .stat-badge { background: var(--medium-bg); color: var(--medium-color); border: 1px solid var(--medium-border); }
+
+    .stat-card.low .stat-value { color: var(--low-color); }
+    .stat-card.low .stat-badge { background: var(--low-bg); color: var(--low-color); border: 1px solid var(--low-border); }
+
+    /* Category Distribution */
+    .section-box {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--card-radius);
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .section-title {
+      font-size: 1.15rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .category-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+
+    .category-pill {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      padding: 0.5rem 1rem;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+
+    .category-pill:hover, .category-pill.active {
+      border-color: var(--accent-color);
+      background: var(--bg-hover);
+    }
+
+    .category-pill .count {
+      background: rgba(255, 255, 255, 0.1);
+      padding: 0.15rem 0.5rem;
+      border-radius: 10px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+
+    /* Filters & Controls */
+    .controls-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .search-input-wrapper {
+      position: relative;
+      flex: 1;
+      min-width: 280px;
+    }
+
+    .search-input {
+      width: 100%;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 0.75rem 1rem 0.75rem 2.5rem;
+      color: var(--text-primary);
+      font-size: 0.9rem;
+      outline: none;
+      transition: var(--transition);
+    }
+
+    .search-input:focus {
+      border-color: var(--accent-color);
+      box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.2);
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 0.85rem;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      width: 18px;
+      height: 18px;
+    }
+
+    .filter-actions {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+    }
+
+    select.filter-select {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      color: var(--text-primary);
+      font-size: 0.9rem;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .btn {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      color: var(--text-primary);
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: var(--transition);
+    }
+
+    .btn:hover {
+      background: var(--bg-hover);
+      border-color: var(--text-secondary);
+    }
+
+    .btn.primary {
+      background: var(--accent-gradient);
+      border: none;
+      color: #fff;
+      font-weight: 600;
+    }
+
+    .btn.primary:hover {
+      opacity: 0.9;
+    }
+
+    /* Findings List */
+    .finding-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--card-radius);
+      margin-bottom: 1rem;
+      overflow: hidden;
+      transition: var(--transition);
+    }
+
+    .finding-card:hover {
+      border-color: var(--border-color);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+
+    .finding-card.severity-CRITICAL { border-left: 4px solid var(--critical-color); }
+    .finding-card.severity-HIGH { border-left: 4px solid var(--high-color); }
+    .finding-card.severity-MEDIUM { border-left: 4px solid var(--medium-color); }
+    .finding-card.severity-LOW { border-left: 4px solid var(--low-color); }
+
+    .finding-header {
+      padding: 1.25rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+      background: rgba(255, 255, 255, 0.01);
+      cursor: pointer;
+    }
+
+    .finding-main-info {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .severity-badge {
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 0.25rem 0.65rem;
+      border-radius: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .severity-badge.CRITICAL { background: var(--critical-bg); color: var(--critical-color); border: 1px solid var(--critical-border); }
+    .severity-badge.HIGH { background: var(--high-bg); color: var(--high-color); border: 1px solid var(--high-border); }
+    .severity-badge.MEDIUM { background: var(--medium-bg); color: var(--medium-color); border: 1px solid var(--medium-border); }
+    .severity-badge.LOW { background: var(--low-bg); color: var(--low-color); border: 1px solid var(--low-border); }
+
+    .finding-title {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .finding-file {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      background: var(--bg-card);
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      border: 1px solid var(--border-color);
+    }
+
+    .finding-category-tag {
+      font-size: 0.75rem;
+      color: var(--accent-color);
+      background: rgba(6, 182, 212, 0.1);
+      border: 1px solid rgba(6, 182, 212, 0.3);
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+    }
+
+    .finding-details {
+      padding: 0 1.5rem 1.5rem 1.5rem;
+      border-top: 1px solid var(--border-color);
+      background: var(--bg-card);
+    }
+
+    .finding-desc {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      margin: 1rem 0;
+    }
+
+    /* Code Snippet Viewer */
+    .code-container {
+      background: #050811;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.85rem;
+      overflow-x: auto;
+      margin: 1rem 0;
+    }
+
+    .code-line {
+      display: flex;
+      padding: 0.25rem 0.75rem;
+      min-width: fit-content;
+    }
+
+    .code-line.target-line {
+      background: rgba(239, 68, 68, 0.12);
+      border-left: 3px solid var(--critical-color);
+    }
+
+    .code-line-num {
+      width: 45px;
+      user-select: none;
+      color: var(--text-muted);
+      text-align: right;
+      padding-right: 1rem;
+    }
+
+    .code-line-text {
+      color: #cbd5e1;
+      white-space: pre;
+    }
+
+    .highlight-secret {
+      background: rgba(239, 68, 68, 0.35);
+      color: #fecaca;
+      border-bottom: 1px dashed var(--critical-color);
+      border-radius: 2px;
+      padding: 0 3px;
+    }
+
+    .remediation-box {
+      background: rgba(6, 182, 212, 0.08);
+      border: 1px solid rgba(6, 182, 212, 0.3);
+      border-radius: 8px;
+      padding: 0.85rem 1.25rem;
+      font-size: 0.85rem;
+      margin-top: 1rem;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+    }
+
+    .remediation-icon {
+      color: var(--accent-color);
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .remediation-title {
+      font-weight: 600;
+      color: var(--accent-color);
+      margin-bottom: 0.25rem;
+    }
+
+    .secret-toggle-btn {
+      background: transparent;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      padding: 0.2rem 0.5rem;
+      color: var(--text-secondary);
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+
+    .secret-toggle-btn:hover {
+      color: var(--text-primary);
+      border-color: var(--text-secondary);
+    }
+
+    .no-findings {
+      text-align: center;
+      padding: 4rem 2rem;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--card-radius);
+    }
+
+    .no-findings-icon {
+      color: #10b981;
+      width: 64px;
+      height: 64px;
+      margin: 0 auto 1rem auto;
+    }
+
+    /* Print & Responsive */
+    @media (max-width: 768px) {
+      body { padding: 1rem; }
+      .header-top { flex-direction: column; }
+      .meta-info { flex-direction: column; width: 100%; gap: 0.5rem; }
+      .finding-header { flex-direction: column; align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header>
+      <div class="header-top">
+        <div class="title-group">
+          <h1>
+            <svg class="shield-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+            </svg>
+            IBM SecretScanner
+          </h1>
+          <p class="subtitle">Enterprise Hardcoded Secrets &amp; Sensitive Data Security Audit Report</p>
+        </div>
+
+        <div class="meta-info">
+          <div class="meta-item">
+            <span class="meta-label">Scanned Target</span>
+            <span class="meta-val">${escapeHtml(targetDir)}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Files Audited</span>
+            <span class="meta-val">${stats.filesScanned.toLocaleString()}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Scan Timestamp</span>
+            <span class="meta-val">${new Date().toLocaleString()}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Created By</span>
+            <span class="meta-val">${APP_METADATA.author} &bull; <a href="mailto:${APP_METADATA.email}" style="color: var(--accent-color); text-decoration: none;">${APP_METADATA.email}</a></span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Stats Grid -->
+    <div class="stats-grid">
+      <div class="stat-card critical">
+        <div class="stat-info">
+          <div class="stat-value">${criticalCount}</div>
+          <div class="stat-name">Critical Risk</div>
+        </div>
+        <div class="stat-badge">🔥</div>
+      </div>
+
+      <div class="stat-card high">
+        <div class="stat-info">
+          <div class="stat-value">${highCount}</div>
+          <div class="stat-name">High Risk</div>
+        </div>
+        <div class="stat-badge">⚠️</div>
+      </div>
+
+      <div class="stat-card medium">
+        <div class="stat-info">
+          <div class="stat-value">${mediumCount}</div>
+          <div class="stat-name">Medium Risk</div>
+        </div>
+        <div class="stat-badge">🛡️</div>
+      </div>
+
+      <div class="stat-card low">
+        <div class="stat-info">
+          <div class="stat-value">${lowCount}</div>
+          <div class="stat-name">Low / Informational</div>
+        </div>
+        <div class="stat-badge">ℹ️</div>
+      </div>
+    </div>
+
+    <!-- Category Filter Bar -->
+    <div class="section-box">
+      <div class="section-title">
+        <span>Findings by Category</span>
+        <span style="font-size: 0.85rem; color: var(--text-secondary); font-weight: normal;">Click category to filter</span>
+      </div>
+      <div class="category-pills" id="categoryPills">
+        <div class="category-pill active" data-category="ALL">
+          All Categories <span class="count">${findings.length}</span>
+        </div>
+        ${categoryEntries.map(([cat, count]) => `
+          <div class="category-pill" data-category="${escapeHtml(cat)}">
+            ${escapeHtml(cat)} <span class="count">${count}</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+
+    <!-- Search and Controls -->
+    <div class="controls-bar">
+      <div class="search-input-wrapper">
+        <svg class="search-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+        <input type="text" id="searchInput" class="search-input" placeholder="Search by file name, rule name, or secret snippet..." />
+      </div>
+
+      <div class="filter-actions">
+        <select id="severityFilter" class="filter-select">
+          <option value="ALL">All Severities</option>
+          <option value="CRITICAL">Critical Only</option>
+          <option value="HIGH">High Only</option>
+          <option value="MEDIUM">Medium Only</option>
+          <option value="LOW">Low Only</option>
+        </select>
+
+        <button class="btn" id="toggleMaskBtn">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+          </svg>
+          <span id="maskBtnText">Reveal Secrets</span>
+        </button>
+
+        <button class="btn" onclick="window.print()">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+          </svg>
+          Export / Print
+        </button>
+      </div>
+    </div>
+
+    <!-- Findings Container -->
+    <div id="findingsContainer">
+      ${findings.length === 0 ? `
+        <div class="no-findings">
+          <svg class="no-findings-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <h2 style="font-size: 1.5rem; margin-bottom: 0.5rem;">Zero Secrets Detected!</h2>
+          <p style="color: var(--text-secondary);">No hardcoded secrets, tokens, credentials, or API keys were found matching the audit policy.</p>
+        </div>
+      ` : findings.map((f, idx) => `
+        <div class="finding-card severity-${f.severity}" data-index="${idx}" data-severity="${f.severity}" data-category="${escapeHtml(f.category)}" data-file="${escapeHtml(f.file.toLowerCase())}" data-rule="${escapeHtml(f.ruleName.toLowerCase())}">
+          <div class="finding-header" onclick="toggleDetails(${idx})">
+            <div class="finding-main-info">
+              <span class="severity-badge ${f.severity}">${f.severity}</span>
+              <span class="finding-title">${escapeHtml(f.ruleName)}</span>
+              <span class="finding-category-tag">${escapeHtml(f.category)}</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+              <span class="finding-file">${escapeHtml(f.file)}:${f.line}</span>
+              <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" style="color: var(--text-muted); transition: var(--transition);" id="arrow-${idx}">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
+
+          <div class="finding-details" id="details-${idx}">
+            <div class="finding-desc">${escapeHtml(f.description)}</div>
+
+            <div class="code-container">
+              ${f.context.map(c => `
+                <div class="code-line ${c.isTarget ? 'target-line' : ''}">
+                  <span class="code-line-num">${c.line}</span>
+                  <span class="code-line-text">${escapeHtml(c.text)}</span>
+                </div>
+              `).join('')}
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; margin: 0.75rem 0;">
+              <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                Detected Match: 
+                <code class="secret-text-box" data-masked="${escapeHtml(f.maskedSecret)}" data-raw="${escapeHtml(f.rawSecret)}" style="background: var(--bg-primary); padding: 0.2rem 0.5rem; border-radius: 4px; color: #f87171;">${escapeHtml(f.maskedSecret)}</code>
+              </div>
+              <button class="secret-toggle-btn" onclick="copyToClipboard('${escapeHtml(f.rawSecret.replace(/'/g, "\\'"))}')">Copy Secret</button>
+            </div>
+
+            <div class="remediation-box">
+              <svg class="remediation-icon" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <div>
+                <div class="remediation-title">Recommended Remediation</div>
+                <div>${escapeHtml(f.remediation)}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+
+    <!-- Footer -->
+    <footer style="margin-top: 3rem; padding: 1.5rem 0 0.5rem; border-top: 1px solid var(--border-color); text-align: center; color: var(--text-muted); font-size: 0.85rem;">
+      <div style="color: var(--text-secondary); font-weight: 500;">
+        <strong>IBM SecretScanner</strong> v${APP_METADATA.version} (${APP_METADATA.versionDate}) &bull; Created by <strong>${APP_METADATA.author}</strong> (<a href="mailto:${APP_METADATA.email}" style="color: var(--accent-color); text-decoration: none;">${APP_METADATA.email}</a>)
+      </div>
+      <div style="margin-top: 0.35rem; font-size: 0.75rem; color: var(--text-muted);">
+        Enterprise Hardcoded Secrets &amp; Sensitive Data Detection Engine
+      </div>
+    </footer>
+  </div>
+
+  <script>
+    const allFindings = ${findingsJson};
+    let currentCategory = 'ALL';
+    let isMasked = true;
+
+    function toggleDetails(index) {
+      const details = document.getElementById('details-' + index);
+      const arrow = document.getElementById('arrow-' + index);
+      if (details.style.display === 'none') {
+        details.style.display = 'block';
+        arrow.style.transform = 'rotate(0deg)';
+      } else {
+        details.style.display = 'none';
+        arrow.style.transform = 'rotate(-90deg)';
+      }
+    }
+
+    // Category filter click
+    document.querySelectorAll('.category-pill').forEach(pill => {
+      pill.addEventListener('click', () => {
+        document.querySelectorAll('.category-pill').forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+        currentCategory = pill.getAttribute('data-category');
+        applyFilters();
+      });
+    });
+
+    const searchInput = document.getElementById('searchInput');
+    const severityFilter = document.getElementById('severityFilter');
+
+    searchInput.addEventListener('input', applyFilters);
+    severityFilter.addEventListener('change', applyFilters);
+
+    function applyFilters() {
+      const query = searchInput.value.trim().toLowerCase();
+      const severity = severityFilter.value;
+      const cards = document.querySelectorAll('.finding-card');
+
+      cards.forEach(card => {
+        const cardSeverity = card.getAttribute('data-severity');
+        const cardCategory = card.getAttribute('data-category');
+        const cardFile = card.getAttribute('data-file');
+        const cardRule = card.getAttribute('data-rule');
+
+        const matchesCategory = currentCategory === 'ALL' || cardCategory === currentCategory;
+        const matchesSeverity = severity === 'ALL' || cardSeverity === severity;
+        const matchesQuery = !query || cardFile.includes(query) || cardRule.includes(query) || cardCategory.toLowerCase().includes(query);
+
+        if (matchesCategory && matchesSeverity && matchesQuery) {
+          card.style.display = 'block';
+        } else {
+          card.style.display = 'none';
+        }
+      });
+    }
+
+    // Mask / Unmask Toggle
+    const toggleMaskBtn = document.getElementById('toggleMaskBtn');
+    const maskBtnText = document.getElementById('maskBtnText');
+
+    toggleMaskBtn.addEventListener('click', () => {
+      isMasked = !isMasked;
+      maskBtnText.textContent = isMasked ? 'Reveal Secrets' : 'Mask Secrets';
+      
+      document.querySelectorAll('.secret-text-box').forEach(el => {
+        el.textContent = isMasked ? el.getAttribute('data-masked') : el.getAttribute('data-raw');
+      });
+    });
+
+    function copyToClipboard(text) {
+      navigator.clipboard.writeText(text).then(() => {
+        alert('Secret copied to clipboard!');
+      }).catch(err => {
+        console.error('Failed to copy: ', err);
+      });
+    }
+  </script>
+</body>
+</html>`;
+
+  fs.writeFileSync(outputPath, htmlContent, 'utf8');
+}
+
+// ---------------------------------------------------------------------------
+// 7. Execution & Summary Output
+// ---------------------------------------------------------------------------
+const startTime = Date.now();
+
+printBanner();
+console.log(`\x1b[90mTarget Path:\x1b[0m ${resolvedTarget}\n`);
+
+const scanStats = { filesScanned: 0, bytesScanned: 0, errors: 0 };
+const findings = scanFileSystem(resolvedTarget, resolvedTarget, [], scanStats);
+const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+
+// Severity counts
+const criticalCount = findings.filter(f => f.severity === 'CRITICAL').length;
+const highCount = findings.filter(f => f.severity === 'HIGH').length;
+const mediumCount = findings.filter(f => f.severity === 'MEDIUM').length;
+const lowCount = findings.filter(f => f.severity === 'LOW').length;
+
+// Print Summary Table
+console.log(`\x1b[1m\x1b[32mScan completed in ${duration}s!\x1b[0m`);
+console.log(`Files Analyzed: \x1b[1m${scanStats.filesScanned}\x1b[0m | Total Findings: \x1b[1m${findings.length}\x1b[0m\n`);
+
+console.log(`\x1b[1mSeverity Breakdown:\x1b[0m`);
+console.log(`  \x1b[31mCRITICAL:\x1b[0m ${criticalCount}`);
+console.log(`  \x1b[33mHIGH:\x1b[0m     ${highCount}`);
+console.log(`  \x1b[33mMEDIUM:\x1b[0m   ${mediumCount}`);
+console.log(`  \x1b[34mLOW:\x1b[0m      ${lowCount}\n`);
+
+if (!quietMode && findings.length > 0) {
+  console.log(`\x1b[1mTop Findings Summary:\x1b[0m`);
+  findings.slice(0, 10).forEach(f => {
+    const sevColor = f.severity === 'CRITICAL' ? '\x1b[31m' : f.severity === 'HIGH' ? '\x1b[33m' : '\x1b[34m';
+    const displaySecret = maskSecrets ? f.maskedSecret : f.rawSecret;
+    console.log(`  [${sevColor}${f.severity}\x1b[0m] \x1b[1m${f.ruleName}\x1b[0m`);
+    console.log(`    \x1b[90mLocation:\x1b[0m ${f.file}:${f.line}`);
+    console.log(`    \x1b[90mMatch:\x1b[0m    ${displaySecret}\n`);
+  });
+
+  if (findings.length > 10) {
+    console.log(`  \x1b[90m... and ${findings.length - 10} more findings.\x1b[0m\n`);
+  }
+}
+
+// Generate JSON Output if requested
+if (jsonOutput) {
+  const jsonPath = path.resolve(jsonOutput);
+  fs.writeFileSync(jsonPath, JSON.stringify({
+    target: resolvedTarget,
+    timestamp: new Date().toISOString(),
+    stats: { ...scanStats, durationSeconds: parseFloat(duration) },
+    summary: { critical: criticalCount, high: highCount, medium: mediumCount, low: lowCount, total: findings.length },
+    findings
+  }, null, 2), 'utf8');
+  console.log(`\x1b[32m[+] JSON Report saved to:\x1b[0m ${jsonPath}`);
+}
+
+// Generate HTML Report
+if (generateHtml) {
+  const htmlPath = path.resolve(htmlOutput);
+  generateHtmlReport(findings, scanStats, resolvedTarget, htmlPath);
+  console.log(`\x1b[32m[+] Interactive HTML Report generated:\x1b[0m ${htmlPath}`);
+}
+
+console.log('');
