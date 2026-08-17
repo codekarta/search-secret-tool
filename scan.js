@@ -113,7 +113,8 @@ if (!fs.existsSync(resolvedTarget)) {
 const EXCLUDE_DIRS = new Set([
   'node_modules', 'dist', 'build', 'target', 'vendor',
   '.git', '.pnpm', 'coverage', '__pycache__', '.idea', '.vscode',
-  '.next', '.nuxt', 'out', 'bin', 'obj', '.bundle', '.gradle'
+  '.next', '.nuxt', 'out', 'bin', 'obj', '.bundle', '.gradle',
+  '.output', 'bundles', 'staticfiles', '.turbo', '.cache'
 ]);
 
 const EXCLUDE_EXTS = new Set([
@@ -132,9 +133,13 @@ const EXCLUDE_FILES = new Set([
   path.basename(__filename), 'secret-scan-report.html'
 ]);
 
-function isExcludedFile(fileName) {
+function isExcludedFile(fileName, fullPath = '') {
   if (EXCLUDE_FILES.has(fileName)) return true;
   if (/^secret-scan-report.*\.html$/i.test(fileName)) return true;
+  if (/\.min\.(js|css)$/i.test(fileName)) return true;
+  if (/\.(bundle|chunk)\.(js|css)$/i.test(fileName)) return true;
+  // Hashed build bundles (e.g. index-C-0LHoUd.js, chunk-A1B2C3.js) in public/assets or dist
+  if (/^[\w-]+-[a-zA-Z0-9_-]{6,}\.(js|css)$/i.test(fileName)) return true;
   return false;
 }
 
@@ -195,12 +200,13 @@ const PATTERNS = [
   // --- Category: Passwords & Assignments ---
   {
     id: 'HARDCODED_PASSWORD_ASSIGN',
-    name: 'Hardcoded Password Variable Assignment',
+    name: 'Hardcoded Password / Key Variable Assignment',
     category: 'Passwords & Credentials',
     severity: 'HIGH',
-    description: 'Matches variable/key assignments targeting passwords, passphrases, root/admin credentials.',
-    remediation: 'Load passwords dynamically from environment variables or a configuration server.',
-    regex: /(?:pass(?:word|wd)|pwd|pass[._-]?phrase|pass[._-]?code|access[._-]?code|db[._-]?(?:pass(?:word|wd)?|pwd)|user[._-]?(?:pass(?:word|wd)?|pwd)|admin[._-]?(?:pass(?:word|wd)?|pwd)|root[._-]?(?:pass(?:word|wd)?|pwd)|master[._-]?(?:pass(?:word|wd)?|pwd)|client[._-]?(?:pass(?:word|wd)?|pwd)|secret[._-]?(?:pass(?:word|wd)?|pwd)|auth[._-]?(?:pass(?:word|wd)?|pwd)|keystore[._-]?(?:pass(?:word|wd)?|pwd)|truststore[._-]?(?:pass(?:word|wd)?|pwd))\s*[:=]\s*["'](?!(?:\$\{|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))[^"'\s]{3,}["']/gi
+    description: 'Matches variable/key assignments targeting passwords, passcodes, passphrases, and credentials enclosed in quotes.',
+    remediation: 'Load credentials dynamically from environment variables or a configuration vault.',
+    regex: /(?<!(?:errors?|err|validation|state|msg|message|alert|warning|label|placeholder|title|desc|description)\.)(?:["']?(?:pass(?:word|wd)|pwd|pass[._-]?phrase|pass[._-]?code|access[._-]?code|db[._-]?(?:pass(?:word|wd)?|pwd)|user[._-]?(?:pass(?:word|wd)?|pwd)|admin[._-]?(?:pass(?:word|wd)?|pwd)|root[._-]?(?:pass(?:word|wd)?|pwd)|master[._-]?(?:pass(?:word|wd)?|pwd)|client[._-]?(?:pass(?:word|wd)?|pwd)|auth[._-]?(?:pass(?:word|wd)?|pwd)|keystore[._-]?(?:pass(?:word|wd)?|pwd)|truststore[._-]?(?:pass(?:word|wd)?|pwd))["']?)\s*(?:[:=]|=>|:=)\s*(["'`])(?!(?:\$\{|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|[^\r\n"']*(?:required|invalid|must\s+be|cannot\s+be|characters|match)|[\^~><=]|\d+(?:px|em|rem|%|vh|vw|pt)\b|\s*\1))([^\r\n\1]{3,})\1/gi,
+    fileFilter: (filePath) => path.basename(filePath).toLowerCase() !== 'package.json'
   },
   {
     id: 'TYPED_PASSWORD_DECLARATION',
@@ -298,12 +304,13 @@ const PATTERNS = [
   // --- Category: Generic Developer Secrets & Tokens ---
   {
     id: 'GENERIC_DEV_SECRET',
-    name: 'Generic Developer Secret / API Key / Access Code',
+    name: 'Generic Developer Secret / Token / API Key',
     category: 'Generic Developer Secrets',
-    severity: 'MEDIUM',
-    description: 'Matches custom developer variable assignments (apiKey, client_secret, masterKey, encryption_key, webhook_secret).',
+    severity: 'HIGH',
+    description: 'Matches variable/key assignments targeting secrets, API keys, JWT tokens, access tokens, and developer credentials enclosed in quotes.',
     remediation: 'Audit the purpose of this key, replace with a secure config loader, and rotate if exposed in git.',
-    regex: /(?:api[._-]?key|access[._-]?code|pass[._-]?code|client[._-]?secret|secret[._-]?key|access[._-]?token|auth[._-]?token|app[._-]?secret|master[._-]?key|encryption[._-]?key|signing[._-]?key|private[._-]?key|access[._-]?secret|webhook[._-]?secret|session[._-]?secret|auth[._-]?key|token[._-]?secret|service[._-]?key)\s*[:=]\s*["'](?!(?:\$\{|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))[a-zA-Z0-9_\-\.]{16,}["']/gi
+    regex: /(?:["']?(?:token|jwt(?:[._-]?(?:token|secret|key))?|secret(?:[._-]?key)?|api[._-]?(?:key|token|secret)|client[._-]?(?:secret|key)|master[._-]?key|encryption[._-]?key|signing[._-]?key|private[._-]?key|access[._-]?(?:secret|token)|webhook[._-]?secret|session[._-]?secret|auth[._-]?(?:key|token|secret)|token[._-]?secret|service[._-]?(?:key|secret))["']?)\s*(?:[:=]|=>|:=)\s*(["'`])(?!(?:\$\{|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|required|invalid|must\s+be|cannot\s+be|[\^~><=]|\d+(?:px|em|rem|%|vh|vw|pt)\b|\s*\1))([^\r\n\1]{3,})\1/gi,
+    fileFilter: (filePath) => path.basename(filePath).toLowerCase() !== 'package.json'
   },
 
   // --- Category: Authentication Tokens & Cryptographic Hashes ---
@@ -391,15 +398,14 @@ const PATTERNS = [
 // 4. Utility Functions: Secret Masking & Context Extraction
 // ---------------------------------------------------------------------------
 function maskValue(value) {
-  if (!value || value.length <= 8) {
-    return '********';
+  if (!value) return '****';
+  const cleanVal = value.trim();
+  if (cleanVal.length <= 8) {
+    return '****';
   }
-  const prefixLen = Math.min(4, Math.floor(value.length / 4));
-  const suffixLen = Math.min(3, Math.floor(value.length / 4));
-  const prefix = value.substring(0, prefixLen);
-  const suffix = value.substring(value.length - suffixLen);
-  const stars = '*'.repeat(Math.max(4, value.length - prefixLen - suffixLen));
-  return `${prefix}${stars}${suffix}`;
+  const prefix = cleanVal.substring(0, Math.min(6, Math.floor(cleanVal.length / 4)));
+  const suffix = cleanVal.substring(cleanVal.length - Math.min(4, Math.floor(cleanVal.length / 5)));
+  return `${prefix}****${suffix}`;
 }
 
 function getLineAndColumn(content, index) {
@@ -480,6 +486,16 @@ function scanSingleFile(fullPath, rootDir, findings, stats) {
   // Quick binary heuristic check: skip files with excessive null bytes
   if (content.includes('\u0000')) {
     return;
+  }
+
+  // Skip minified JS/CSS bundle files (very long single lines)
+  const ext = path.extname(fullPath).toLowerCase();
+  if ((ext === '.js' || ext === '.mjs' || ext === '.cjs' || ext === '.css') && content.length > 5000) {
+    const firstChunk = content.substring(0, 3000);
+    const lines = firstChunk.split(/\r?\n/);
+    if (lines.some(line => line.length > 1000)) {
+      return;
+    }
   }
 
   const relPath = path.relative(rootDir, fullPath) || path.basename(fullPath);
