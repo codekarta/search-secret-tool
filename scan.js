@@ -19,7 +19,29 @@ const fs = require('fs');
 const path = require('path');
 
 // ---------------------------------------------------------------------------
-// 1. CLI Arguments & Configuration Parsing
+// 1. Tool Metadata & Banner
+// ---------------------------------------------------------------------------
+const APP_METADATA = {
+  name: 'IBM SecretScanner',
+  author: 'Manish Bansal',
+  email: 'manish.bansal@example.com',
+  version: '1.3.0',
+  versionDate: '2026-08-17',
+  description: 'Hardcoded Secrets & Sensitive Data Detection Tool'
+};
+
+function printBanner() {
+  console.log(`
+\x1b[36m╔══════════════════════════════════════════════════════════════════════════════╗\x1b[0m
+\x1b[36m║\x1b[0m   \x1b[1m\x1b[36m🛡️  ${APP_METADATA.name}\x1b[0m \x1b[90m- ${APP_METADATA.description}\x1b[0m
+\x1b[36m╠══════════════════════════════════════════════════════════════════════════════╣\x1b[0m
+\x1b[36m║\x1b[0m  \x1b[1mCreated by:\x1b[0m  \x1b[37m${APP_METADATA.author}\x1b[0m (\x1b[34m${APP_METADATA.email}\x1b[0m)
+\x1b[36m║\x1b[0m  \x1b[1mVersion:\x1b[0m     \x1b[32mv${APP_METADATA.version}\x1b[0m \x1b[90m| Released: ${APP_METADATA.versionDate}\x1b[0m
+\x1b[36m╚══════════════════════════════════════════════════════════════════════════════╝\x1b[0m`);
+}
+
+// ---------------------------------------------------------------------------
+// 2. CLI Arguments & Configuration Parsing
 // ---------------------------------------------------------------------------
 const args = process.argv.slice(2);
 
@@ -36,29 +58,30 @@ function getFormattedTimestamp() {
 }
 
 function printHelp() {
+  printBanner();
   console.log(`
-\x1b[1m\x1b[36m⚡ Hardcoded Secrets Scanner & HTML Reporter\x1b[0m
-
 \x1b[1mUSAGE:\x1b[0m
-  node scan_secrets.js <path-to-scan> [options]
+  node scan_new.js <path-to-scan> [options]
 
 \x1b[1mARGUMENTS:\x1b[0m
   <path-to-scan>          Directory or file to scan (default: current directory '.')
 
 \x1b[1mOPTIONS:\x1b[0m
-  -o, --output <file>     HTML report destination path (default: './secret-scan-report_YYYY-MM-DD_HH-mm-ss.html')
-  --no-html               Disable HTML report generation
-  --json <file>           Export raw scan findings to a JSON file
-  --unmask                Do not mask secret values in the terminal or report
+  -o, --output <file>     JSON report destination path (default: './reports/report_YYYY-MM-DD_HH-mm-ss.json')
+  --reports-dir <dir>     Custom reports directory (default: './reports')
+  --unmask                Do not mask secret values in the terminal or JSON report
   --severity <level>      Filter scan results by minimum severity (CRITICAL, HIGH, MEDIUM, LOW)
   -q, --quiet             Quiet mode (suppress terminal finding summaries)
   -v, --verbose           Verbose output (logs every scanned file)
   -h, --help              Show this help menu and exit
 
+\x1b[1mVIEWING REPORTS:\x1b[0m
+  Open \x1b[36mindex.html\x1b[0m in your browser to view and switch between all scan reports.
+
 \x1b[1mEXAMPLES:\x1b[0m
-  node scan_secrets.js .
-  node scan_secrets.js ./src --output audit-report.html
-  node scan_secrets.js /var/www/project --json findings.json --severity HIGH
+  node scan_new.js .
+  node scan_new.js ./src --severity HIGH
+  node scan_new.js /var/www/project -o ./reports/my-audit.json
 `);
   process.exit(0);
 }
@@ -68,9 +91,8 @@ if (args.includes('-h') || args.includes('--help')) {
 }
 
 let targetPath = '.';
-let htmlOutput = null;
-let jsonOutput = null;
-let generateHtml = true;
+let customOutput = null;
+let customReportsDir = null;
 let maskSecrets = true;
 let minSeverity = 'LOW';
 let quietMode = false;
@@ -78,12 +100,13 @@ let verboseMode = false;
 
 for (let i = 0; i < args.length; i++) {
   const arg = args[i];
-  if (arg === '-o' || arg === '--output') {
-    htmlOutput = args[++i];
-  } else if (arg === '--no-html') {
-    generateHtml = false;
-  } else if (arg === '--json') {
-    jsonOutput = args[++i];
+  if (arg === '--serve') {
+    require('./serve.js');
+    return;
+  } else if (arg === '-o' || arg === '--output') {
+    customOutput = args[++i];
+  } else if (arg === '--reports-dir') {
+    customReportsDir = args[++i];
   } else if (arg === '--unmask') {
     maskSecrets = false;
   } else if (arg === '--severity') {
@@ -95,10 +118,6 @@ for (let i = 0; i < args.length; i++) {
   } else if (!arg.startsWith('-')) {
     targetPath = arg;
   }
-}
-
-if (!htmlOutput) {
-  htmlOutput = `secret-scan-report_${getFormattedTimestamp()}.html`;
 }
 
 const resolvedTarget = path.resolve(targetPath);
@@ -113,14 +132,19 @@ if (!fs.existsSync(resolvedTarget)) {
 const EXCLUDE_DIRS = new Set([
   'node_modules', 'dist', 'build', 'target', 'vendor',
   '.git', '.pnpm', 'coverage', '__pycache__', '.idea', '.vscode',
-  '.next', '.nuxt', 'out', 'bin', 'obj', '.bundle', '.gradle',
-  '.output', 'bundles', 'staticfiles', '.turbo', '.cache'
+  '.next', '.nuxt', 'out', 'bin', 'obj', '.bundle', '.gradle', '.mvn',
+  '.output', 'bundles', 'staticfiles', '.turbo', '.cache',
+  '.venv', 'venv', 'env', 'site-packages', '.tox',
+  '.terraform', '.yarn', '.npm', '.pnpm-store', 'Pods', '.serverless',
+  'reports'
 ]);
 
 const EXCLUDE_EXTS = new Set([
   // Binaries, Archives & Compiled
   '.class', '.jar', '.war', '.ear', '.pyc', '.pyo', '.min.js', '.min.css', '.map',
-  '.lock', '.bin', '.exe', '.dll', '.so', '.dylib', '.wasm', '.pak', '.dat',
+  '.lock', '.lockb', '.lockfile', '.bin', '.exe', '.dll', '.so', '.dylib', '.wasm', '.pak', '.dat',
+  // Checksums & State
+  '.sum', '.tfstate',
   // Media & Fonts
   '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.webp', '.avif', '.bmp', '.tiff',
   '.woff', '.woff2', '.ttf', '.eot', '.otf',
@@ -129,17 +153,49 @@ const EXCLUDE_EXTS = new Set([
 ]);
 
 const EXCLUDE_FILES = new Set([
-  'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'Cargo.lock', 'composer.lock', 'Gemfile.lock', 'go.sum',
-  path.basename(__filename), 'secret-scan-report.html'
+  // Node.js / JS / Bun / Deno
+  'package-lock.json', 'npm-shrinkwrap.json', 'yarn.lock', 'pnpm-lock.yaml', 'pnpm-lock.yml', 'bun.lockb', 'bun.lock', 'deno.lock',
+  // Python
+  'poetry.lock', 'pipfile.lock', 'pdm.lock', 'uv.lock',
+  // Rust / Go / PHP / Ruby
+  'cargo.lock', 'composer.lock', 'gemfile.lock', 'go.sum', 'gopkg.lock',
+  // JVM / Gradle / Maven / Wrappers
+  'gradle.lockfile', 'mvnw', 'mvnw.cmd', 'mvnw.ps1', 'gradlew', 'gradlew.bat', 'gradlew.ps1',
+  // iOS / CocoaPods / Carthage / Swift / Dart / Elixir
+  'podfile.lock', 'package.resolved', 'cartfile.resolved', 'pubspec.lock', 'mix.lock', 'rebar.lock',
+  // .NET / NuGet / Infra / Terraform / Helm
+  'packages.lock.json', 'flake.lock', '.terraform.lock.hcl', 'chart.lock', 'helm.lock', 'berksfile.lock',
+  // Scanner Reports & Self
+  path.basename(__filename).toLowerCase(), 'secret-scan-report.html', 'report-viewer.html', 'index.html'
 ]);
 
 function isExcludedFile(fileName, fullPath = '') {
-  if (EXCLUDE_FILES.has(fileName)) return true;
+  const lowerName = fileName.toLowerCase();
+  if (EXCLUDE_FILES.has(fileName) || EXCLUDE_FILES.has(lowerName)) return true;
+  
+  // HTML / JSON report files generated by scanner
   if (/^secret-scan-report.*\.html$/i.test(fileName)) return true;
+  if (/^report.*\.html$/i.test(fileName)) return true;
+  if (/^report_.*\.json$/i.test(fileName)) return true;
+  if (fileName === 'reports.json') return true;
+  
+  // Lockfiles & Dependency Checksums (package-lock.json, *.lock, *.lockb, *.lockfile, *.resolved, go.sum, etc.)
+  if (/\.lock(b|file)?$/i.test(fileName)) return true;
+  if (/[\w.-]*lock\.(json|yaml|yml|hcl)$/i.test(fileName)) return true;
+  if (/^(package-lock|packages\.lock|npm-shrinkwrap)\.json$/i.test(fileName)) return true;
+  if (/^(package|cartfile)\.resolved$/i.test(fileName)) return true;
+  if (/\.(sum|tfstate|tfstate\.backup)$/i.test(fileName)) return true;
+  if (/^(checksums|sha256sums|md5sums)\.txt$/i.test(fileName)) return true;
+  
+  // Build Wrappers & wrapper directories
+  if (/^(mvnw|gradlew)(\.cmd|\.bat|\.ps1)?$/i.test(fileName)) return true;
+  if (/[/\\](\.mvn|gradle[/\\]wrapper|\.yarn|\.terraform)[/\\]/i.test(fullPath)) return true;
+  
+  // Minified bundles & hashed chunks
   if (/\.min\.(js|css)$/i.test(fileName)) return true;
   if (/\.(bundle|chunk)\.(js|css)$/i.test(fileName)) return true;
-  // Hashed build bundles (e.g. index-C-0LHoUd.js, chunk-A1B2C3.js) in public/assets or dist
   if (/^[\w-]+-[a-zA-Z0-9_-]{6,}\.(js|css)$/i.test(fileName)) return true;
+  
   return false;
 }
 
@@ -162,7 +218,7 @@ const PATTERNS = [
     severity: 'CRITICAL',
     description: 'Matches standard database connection strings with embedded plaintext username & password (Postgres, MySQL, Oracle, MSSQL, MongoDB, Redis, etc.).',
     remediation: 'Externalize credentials into environment variables injected at runtime or use a managed Secrets Vault / IAM database authentication.',
-    regex: /\b(?:mongodb(?:\+srv)?|postgres|postgresql|mysql|mariadb|oracle|sqlserver|mssql|db2|h2|sqlite|sybase|redis|rediss|amqp|amqps|clickhouse|cassandra|snowflake|redshift|jdbc:(?:oracle|sqlserver|mysql|mariadb|postgresql|postgres|db2|h2|sqlite|sybase|clickhouse|snowflake|redshift|[a-z0-9_-]+):(?:\/\/)?|https?|ftps?):\/\/[^:\s"'`]+:(?!(?:\$\{|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))[^@\s"'`]{3,}@[^\s"'`]+/gi
+    regex: /\b(?:mongodb(?:\+srv)?|postgres|postgresql|mysql|mariadb|oracle|sqlserver|mssql|db2|h2|sqlite|sybase|redis|rediss|amqp|amqps|clickhouse|cassandra|snowflake|redshift|jdbc:(?:oracle|sqlserver|mysql|mariadb|postgresql|postgres|db2|h2|sqlite|sybase|clickhouse|snowflake|redshift|[a-z0-9_-]+):(?:\/\/)?|https?|ftps?):\/\/[^/:?#@\s"'`]+:(?!(?:["'`]*\$|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))[^/:?#@\s"'`]{3,}@[^\s"'`]+/gi
   },
   {
     id: 'ORACLE_JDBC_URL',
@@ -171,7 +227,7 @@ const PATTERNS = [
     severity: 'CRITICAL',
     description: 'Matches Oracle-specific JDBC driver URLs containing embedded user/password combinations.',
     remediation: 'Use Oracle Wallets, connection pooling with environment variables, or JNDI datasource configuration.',
-    regex: /\bjdbc:oracle:(?:thin|oci)?:[^\/\s"'`]+\/(?!(?:\$\{|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))[^@\s"'`]{3,}@[^\s"'`]+/gi
+    regex: /\bjdbc:oracle:(?:thin|oci)?:[^\/:?#@\s"'`]+\/(?!(?:["'`]*\$|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))[^/:?#@\s"'`]{3,}@[^\s"'`]+/gi
   },
   {
     id: 'ADONET_ODBC_CONN',
@@ -180,7 +236,7 @@ const PATTERNS = [
     severity: 'HIGH',
     description: 'Matches Microsoft SQL Server, Oracle, DB2, and generic ODBC/ADO.NET connection strings containing user credentials.',
     remediation: 'Use Windows Integrated Security (SSPI), Azure Managed Identity, or retrieve connection strings from Azure Key Vault / App Configuration.',
-    regex: /(?:\b(?:Data\s*Source|Server|Initial\s*Catalog|Database|jdbc:[a-z0-9_:-]+|Driver|Provider)\b[^;"'\n]*;\s*)*(?:User\s*Id|uid|user|username)\s*=\s*[^;"'\n]*;\s*(?:Password|pwd)\s*=\s*["']?(?!(?:\$\{|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))[^;"'\s]{3,}["']?/gi
+    regex: /(?:\b(?:Data\s*Source|Server|Initial\s*Catalog|Database|jdbc:[a-z0-9_:-]+|Driver|Provider)\b[^;"'\n]*;\s*)*(?:User\s*Id|uid|user|username)\s*=\s*[^;"'\n]*;\s*(?:Password|pwd)\s*=\s*["']?(?!(?:["'`]*\$|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))[^;"'\s]{3,}["']?/gi
   },
   {
     id: 'DB_CONFIG_PASSWORD_KEY',
@@ -189,7 +245,7 @@ const PATTERNS = [
     severity: 'HIGH',
     description: 'Matches database password keys in configuration files (Spring, Quarkus, .properties, .yaml, .ini).',
     remediation: 'Replace plaintext values with environment variable place-holders like ${DB_PASSWORD}.',
-    regex: /(?:datasource|jdbc|db|database|spring\.datasource|oracle|mssql|sqlserver|db2|h2|sqlite|mysql|mariadb|postgres|postgresql|mongodb|redis|cassandra|clickhouse|keystore|truststore)[._-](?:pass(?:word|wd)|pwd|pass[._-]?code|access[._-]?code)\s*=\s*(?!(?:\$\{|#|\s*$|change[_-]?me|your[_-]|example|dummy|placeholder))[^\s#]{3,}/gi,
+    regex: /(?:datasource|jdbc|db|database|spring\.datasource|oracle|mssql|sqlserver|db2|h2|sqlite|mysql|mariadb|postgres|postgresql|mongodb|redis|cassandra|clickhouse|keystore|truststore)[._-](?:pass(?:word|wd)|pwd|pass[._-]?code|access[._-]?code)\s*=\s*(?!(?:["'`]*\$|#|\s*$|change[_-]?me|your[_-]|example|dummy|placeholder))[^\s#]{3,}/gi,
     fileFilter: (filePath) => {
       const ext = path.extname(filePath).toLowerCase();
       const base = path.basename(filePath).toLowerCase();
@@ -205,7 +261,7 @@ const PATTERNS = [
     severity: 'HIGH',
     description: 'Matches variable/key assignments targeting passwords, passcodes, passphrases, and credentials enclosed in quotes.',
     remediation: 'Load credentials dynamically from environment variables or a configuration vault.',
-    regex: /(?<!(?:errors?|err|validation|state|msg|message|alert|warning|label|placeholder|title|desc|description)\.)(?:["']?(?:pass(?:word|wd)|pwd|pass[._-]?phrase|pass[._-]?code|access[._-]?code|db[._-]?(?:pass(?:word|wd)?|pwd)|user[._-]?(?:pass(?:word|wd)?|pwd)|admin[._-]?(?:pass(?:word|wd)?|pwd)|root[._-]?(?:pass(?:word|wd)?|pwd)|master[._-]?(?:pass(?:word|wd)?|pwd)|client[._-]?(?:pass(?:word|wd)?|pwd)|auth[._-]?(?:pass(?:word|wd)?|pwd)|keystore[._-]?(?:pass(?:word|wd)?|pwd)|truststore[._-]?(?:pass(?:word|wd)?|pwd))["']?)\s*(?:[:=]|=>|:=)\s*(["'`])(?!(?:\$\{|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|[^\r\n"']*(?:required|invalid|must\s+be|cannot\s+be|characters|match)|[\^~><=]|\d+(?:px|em|rem|%|vh|vw|pt)\b|\s*\1))([^\r\n\1]{3,})\1/gi,
+    regex: /(?<!(?:errors?|err|validation|state|msg|message|alert|warning|label|placeholder|title|desc|description)\.)(?:["']?(?:pass(?:word|wd)|pwd|pass[._-]?phrase|pass[._-]?code|access[._-]?code|db[._-]?(?:pass(?:word|wd)?|pwd)|user[._-]?(?:pass(?:word|wd)?|pwd)|admin[._-]?(?:pass(?:word|wd)?|pwd)|root[._-]?(?:pass(?:word|wd)?|pwd)|master[._-]?(?:pass(?:word|wd)?|pwd)|client[._-]?(?:pass(?:word|wd)?|pwd)|auth[._-]?(?:pass(?:word|wd)?|pwd)|keystore[._-]?(?:pass(?:word|wd)?|pwd)|truststore[._-]?(?:pass(?:word|wd)?|pwd))["']?)\s*(?:[:=]|=>|:=)\s*(["'`])(?!(?:["'`]*\$|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|[^\r\n"']*(?:required|invalid|must\s+be|cannot\s+be|characters|match)|[\^~><=]|\d+(?:px|em|rem|%|vh|vw|pt)\b|\s*\1))([^\r\n\1]{3,})\1/gi,
     fileFilter: (filePath) => path.basename(filePath).toLowerCase() !== 'package.json'
   },
   {
@@ -215,7 +271,7 @@ const PATTERNS = [
     severity: 'HIGH',
     description: 'Matches strongly-typed variable declarations (String, const, let, final) holding passwords in source code.',
     remediation: 'Remove the hardcoded literal and read from config or system properties.',
-    regex: /(?:String|final|const|let|var|val)\s+(?:pass(?:word|wd)|pwd|pass[._-]?phrase|pass[._-]?code|access[._-]?code|db[._-]?(?:pass(?:word|wd)?|pwd)|user[._-]?(?:pass(?:word|wd)?|pwd)|admin[._-]?(?:pass(?:word|wd)?|pwd)|root[._-]?(?:pass(?:word|wd)?|pwd)|secret[._-]?key)\s*=\s*["'](?!(?:\$\{|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))[^"'\s]{3,}["']/gi
+    regex: /(?:String|final|const|let|var|val)\s+(?:pass(?:word|wd)|pwd|pass[._-]?phrase|pass[._-]?code|access[._-]?code|db[._-]?(?:pass(?:word|wd)?|pwd)|user[._-]?(?:pass(?:word|wd)?|pwd)|admin[._-]?(?:pass(?:word|wd)?|pwd)|root[._-]?(?:pass(?:word|wd)?|pwd)|secret[._-]?key)\s*=\s*["'](?!(?:["'`]*\$|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))[^"'\s]{3,}["']/gi
   },
   {
     id: 'CREDENTIAL_SETTER_CALL',
@@ -224,16 +280,16 @@ const PATTERNS = [
     severity: 'MEDIUM',
     description: 'Matches method calls like setPassword("..."), authenticate("..."), login("...") with inline string constants.',
     remediation: 'Pass runtime credential variables rather than hardcoded string parameters.',
-    regex: /\b(?:set|with)(?:Password|Passcode|AccessCode|ClientSecret|SecretKey)\s*\([^)]*["'](?!(?:\$\{|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))[^"'\s]{3,}["']|\b(?:createCredentials|authenticate|login|getConnection)\s*\([^)]*["'](?!(?:\$\{|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))[^"'\s]{3,}["']/gi
+    regex: /\b(?:set|with)(?:Password|Passcode|AccessCode|ClientSecret|SecretKey)\s*\(\s*(?:[a-zA-Z0-9_$]+\s*,\s*)*["'](?!(?:["'`]*\$|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))[^"'\s]{3,}["']|\b(?:createCredentials|authenticate|login|getConnection)\s*\(\s*(?:[a-zA-Z0-9_$]+\s*,\s*)*["'](?!(?:["'`]*\$|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))[^"'\s]{3,}["']/gi
   },
   {
     id: 'DICT_COLLECTION_SECRET_CALL',
-    name: 'Dictionary / Map / Collection Method or Subscript Call with Secret',
+    name: 'Dictionary / Map / Collection Method Call with Secret',
     category: 'Passwords & Credentials',
     severity: 'HIGH',
-    description: 'Matches dictionary/map methods and callable structures (dict.add("key", "val"), dict.put, dict.set, dict("key", "val"), dict["key", "val"]).',
+    description: 'Matches dictionary/map collection methods (dict.add("key", "val"), dict.put, dict.set, dict.setProperty).',
     remediation: 'Externalize credentials and avoid hardcoding plaintext secrets in collection builders.',
-    regex: /\b[a-zA-Z0-9_$]+(?:\.[a-zA-Z0-9_$]+)*(?:\s*\.\s*(?:add|put|set|insert|push|set_secret|add_secret|put_secret|append))?\s*[\(\[]\s*(["'`])(?:[a-zA-Z0-9_\s-]*(?:pass(?:word|wd)?|pwd|pass[._-]?phrase|pass[._-]?code|access[._-]?code|secret(?:[._-]?key)?|api[._-]?(?:key|token|secret)|client[._-]?(?:secret|key)|jwt(?:[._-]?(?:token|secret|key))?|token(?:[._-]?secret)?|auth[._-]?(?:key|token|secret)|encryption[._-]?(?:key|secret)|encrypted[._-]?(?:pass(?:word|wd)?|pwd|key|secret)|master[._-]?key|signing[._-]?key|private[._-]?key|access[._-]?(?:secret|token)|webhook[._-]?secret|session[._-]?secret|service[._-]?(?:key|secret)|db[._-]?(?:pass(?:word|wd)?|pwd)|user[._-]?(?:pass(?:word|wd)?|pwd)|admin[._-]?(?:pass(?:word|wd)?|pwd)|root[._-]?(?:pass(?:word|wd)?|pwd))[a-zA-Z0-9_\s-]*)\1\s*,\s*(["'`])(?!(?:\$\{|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|[^\r\n"']*(?:required|invalid|must\s+be|cannot\s+be|characters|match)|[\^~><=]|\d+(?:px|em|rem|%|vh|vw|pt)\b|\s*\2))([^\r\n\2]{3,})\2\s*[\)\]]/gi,
+    regex: /\b[a-zA-Z0-9_$]+(?:\.[a-zA-Z0-9_$]+)*\s*\.\s*(?:add|put|set|insert|push|set_secret|add_secret|put_secret|append|setProperty|setAttribute)\s*\(\s*(["'`])(?:[a-zA-Z0-9_\s-]*(?:pass(?:word|wd)?|pwd|pass[._-]?phrase|pass[._-]?code|access[._-]?code|secret(?:[._-]?key)?|api[._-]?(?:key|token|secret)|client[._-]?(?:secret|key)|jwt(?:[._-]?(?:token|secret|key))?|token(?:[._-]?secret)?|auth[._-]?(?:key|token|secret)|encryption[._-]?(?:key|secret)|encrypted[._-]?(?:pass(?:word|wd)?|pwd|key|secret)|master[._-]?key|signing[._-]?key|private[._-]?key|access[._-]?(?:secret|token)|webhook[._-]?secret|session[._-]?secret|service[._-]?(?:key|secret)|db[._-]?(?:pass(?:word|wd)?|pwd)|user[._-]?(?:pass(?:word|wd)?|pwd)|admin[._-]?(?:pass(?:word|wd)?|pwd)|root[._-]?(?:pass(?:word|wd)?|pwd))[a-zA-Z0-9_\s-]*)\1\s*,\s*(["'`])(?!(?:["'`]*\$|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|[^\r\n"']*(?:required|invalid|must\s+be|cannot\s+be|characters|match)|[\^~><=]|\d+(?:px|em|rem|%|vh|vw|pt)\b|\s*\2))([^\r\n\2]{3,})\2\s*\)/gi,
     fileFilter: (filePath) => path.basename(filePath).toLowerCase() !== 'package.json'
   },
   {
@@ -243,7 +299,7 @@ const PATTERNS = [
     severity: 'HIGH',
     description: 'Matches dictionary/map indexing assignments (dict["password"] = "secret", dict["encryptedKey"] = "val").',
     remediation: 'Load secret values from environment variables or secure storage.',
-    regex: /\b[a-zA-Z0-9_$]+(?:\.[a-zA-Z0-9_$]+)*\s*\[\s*(["'`])(?:[a-zA-Z0-9_\s-]*(?:pass(?:word|wd)?|pwd|pass[._-]?phrase|pass[._-]?code|access[._-]?code|secret(?:[._-]?key)?|api[._-]?(?:key|token|secret)|client[._-]?(?:secret|key)|jwt(?:[._-]?(?:token|secret|key))?|token(?:[._-]?secret)?|auth[._-]?(?:key|token|secret)|encryption[._-]?(?:key|secret)|encrypted[._-]?(?:pass(?:word|wd)?|pwd|key|secret)|master[._-]?key|signing[._-]?key|private[._-]?key|access[._-]?(?:secret|token)|webhook[._-]?secret|session[._-]?secret|service[._-]?(?:key|secret)|db[._-]?(?:pass(?:word|wd)?|pwd)|user[._-]?(?:pass(?:word|wd)?|pwd)|admin[._-]?(?:pass(?:word|wd)?|pwd)|root[._-]?(?:pass(?:word|wd)?|pwd))[a-zA-Z0-9_\s-]*)\1\s*\]\s*=\s*(["'`])(?!(?:\$\{|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|[^\r\n"']*(?:required|invalid|must\s+be|cannot\s+be|characters|match)|[\^~><=]|\d+(?:px|em|rem|%|vh|vw|pt)\b|\s*\2))([^\r\n\2]{3,})\2/gi,
+    regex: /\b[a-zA-Z0-9_$]+(?:\.[a-zA-Z0-9_$]+)*\s*\[\s*(["'`])(?:[a-zA-Z0-9_\s-]*(?:pass(?:word|wd)?|pwd|pass[._-]?phrase|pass[._-]?code|access[._-]?code|secret(?:[._-]?key)?|api[._-]?(?:key|token|secret)|client[._-]?(?:secret|key)|jwt(?:[._-]?(?:token|secret|key))?|token(?:[._-]?secret)?|auth[._-]?(?:key|token|secret)|encryption[._-]?(?:key|secret)|encrypted[._-]?(?:pass(?:word|wd)?|pwd|key|secret)|master[._-]?key|signing[._-]?key|private[._-]?key|access[._-]?(?:secret|token)|webhook[._-]?secret|session[._-]?secret|service[._-]?(?:key|secret)|db[._-]?(?:pass(?:word|wd)?|pwd)|user[._-]?(?:pass(?:word|wd)?|pwd)|admin[._-]?(?:pass(?:word|wd)?|pwd)|root[._-]?(?:pass(?:word|wd)?|pwd))[a-zA-Z0-9_\s-]*)\1\s*\]\s*=\s*(["'`])(?!(?:["'`]*\$|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|[^\r\n"']*(?:required|invalid|must\s+be|cannot\s+be|characters|match)|[\^~><=]|\d+(?:px|em|rem|%|vh|vw|pt)\b|\s*\2))([^\r\n\2]{3,})\2/gi,
     fileFilter: (filePath) => path.basename(filePath).toLowerCase() !== 'package.json'
   },
 
@@ -291,7 +347,7 @@ const PATTERNS = [
     severity: 'HIGH',
     description: 'Matches explicit assignments to OpenAI, Anthropic, Cohere, Replicate, or LLM token variables.',
     remediation: 'Inject LLM keys via environment variables (e.g. process.env.OPENAI_API_KEY).',
-    regex: /(?:openai|anthropic|cohere|replicate|huggingface|llm)[._-]*(?:api[._-]*)?(?:key|token|secret)\s*[:=]\s*["'](?!(?:\$\{|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))[a-zA-Z0-9_\-]{16,}["']/gi
+    regex: /(?:openai|anthropic|cohere|replicate|huggingface|llm)[._-]*(?:api[._-]*)?(?:key|token|secret)\s*[:=]\s*["'](?!(?:["'`]*\$|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))[a-zA-Z0-9_\-]{16,}["']/gi
   },
   {
     id: 'SAAS_TOKEN_THIRD_PARTY',
@@ -309,7 +365,7 @@ const PATTERNS = [
     severity: 'HIGH',
     description: 'Matches JFrog/Artifactory API keys (AKCP8...), reference tokens (cmVmdHsk...), and package repository credential variables.',
     remediation: 'Revoke and rotate package registry tokens and configure credentials via ~/.npmrc or ~/.m2/settings.xml using CI secrets.',
-    regex: /\bAKCP8[a-zA-Z0-9]{60}\b|\bcmVmdHsk[a-zA-Z0-9+/=]{60,}\b|(?:artifactory|jfrog|nexus)[._-]*(?:api[._-]*)?(?:key|token|password|secret)\s*[:=]\s*["'](?!(?:\$\{|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))[a-zA-Z0-9_\-\.\+/=]{10,}["']/gi
+    regex: /\bAKCP8[a-zA-Z0-9]{60}\b|\bcmVmdHsk[a-zA-Z0-9+/=]{60,}\b|(?:artifactory|jfrog|nexus)[._-]*(?:api[._-]*)?(?:key|token|password|secret)\s*[:=]\s*["'](?!(?:["'`]*\$|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))[a-zA-Z0-9_\-\.\+/=]{10,}["']/gi
   },
   {
     id: 'APPDYNAMICS_KEY',
@@ -329,7 +385,7 @@ const PATTERNS = [
     severity: 'HIGH',
     description: 'Matches variable/key assignments targeting secrets, API keys, JWT tokens, access tokens, and developer credentials enclosed in quotes.',
     remediation: 'Audit the purpose of this key, replace with a secure config loader, and rotate if exposed in git.',
-    regex: /(?:["']?(?:token|jwt(?:[._-]?(?:token|secret|key))?|secret(?:[._-]?key)?|api[._-]?(?:key|token|secret)|client[._-]?(?:secret|key)|master[._-]?key|encryption[._-]?key|signing[._-]?key|private[._-]?key|access[._-]?(?:secret|token)|webhook[._-]?secret|session[._-]?secret|auth[._-]?(?:key|token|secret)|token[._-]?secret|service[._-]?(?:key|secret))["']?)\s*(?:[:=]|=>|:=)\s*(["'`])(?!(?:\$\{|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|required|invalid|must\s+be|cannot\s+be|[\^~><=]|\d+(?:px|em|rem|%|vh|vw|pt)\b|\s*\1))([^\r\n\1]{3,})\1/gi,
+    regex: /(?:["']?(?:token|jwt(?:[._-]?(?:token|secret|key))?|secret(?:[._-]?key)?|api[._-]?(?:key|token|secret)|client[._-]?(?:secret|key)|master[._-]?key|encryption[._-]?key|signing[._-]?key|private[._-]?key|access[._-]?(?:secret|token)|webhook[._-]?secret|session[._-]?secret|auth[._-]?(?:key|token|secret)|token[._-]?secret|service[._-]?(?:key|secret))["']?)\s*(?:[:=]|=>|:=)\s*(["'`])(?!(?:["'`]*\$|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|required|invalid|must\s+be|cannot\s+be|[\^~><=]|\d+(?:px|em|rem|%|vh|vw|pt)\b|\s*\1))([^\r\n\1]{3,})\1/gi,
     fileFilter: (filePath) => path.basename(filePath).toLowerCase() !== 'package.json'
   },
 
@@ -406,17 +462,249 @@ const PATTERNS = [
     severity: 'HIGH',
     description: 'Matches sensitive variable names (PASS, SECRET, KEY, TOKEN) in committed .env files with values >= 6 chars.',
     remediation: 'Add .env files to .gitignore and distribute secrets via environment templates (.env.example) and CI/CD secret stores.',
-    regex: /^(?:[A-Z0-9_]*(?:PASS(?:WORD|WD)?|PASS[._-]?CODE|ACCESS[._-]?CODE|SECRET|API[._-]?KEY|TOKEN|PRIVATE[._-]?KEY|AUTH[._-]?KEY)[A-Z0-9_]*)\s*=\s*(?!(?:\$\{|\{\{|#|\s*$|change[_-]?me|default|your[_-]|example|dummy|placeholder|<|TODO))[^\s#]{6,}/gm,
+    regex: /^(?:[A-Z0-9_]*(?:PASS(?:WORD|WD)?|PASS[._-]?CODE|ACCESS[._-]?CODE|SECRET|API[._-]?KEY|TOKEN|PRIVATE[._-]?KEY|AUTH[._-]?KEY)[A-Z0-9_]*)\s*=\s*(?!(?:["'`]*\$|\{\{|#|\s*$|change[_-]?me|default|your[_-]|example|dummy|placeholder|<|TODO))[^\s#]{6,}/gm,
     fileFilter: (filePath) => {
       const base = path.basename(filePath).toLowerCase();
       return base.startsWith('.env') || filePath.endsWith('.env');
+    }
+  },
+
+  // --- Category: Private Keys & Certificates ---
+  {
+    id: 'PRIVATE_KEY_PEM',
+    name: 'PEM-Encoded Private Key',
+    category: 'Private Keys & Certificates',
+    severity: 'CRITICAL',
+    description: 'Matches PEM-encoded private key blocks (RSA, EC, DSA, PKCS8, SSH, PGP). Inline private keys in source code or config files are a critical security risk.',
+    remediation: 'Remove the private key from source, revoke/rotate the key pair, and store in a secure key management system (AWS KMS, HashiCorp Vault, Azure Key Vault).',
+    regex: /-----BEGIN\s+(?:RSA\s+|DSA\s+|EC\s+|OPENSSH\s+|PGP\s+|ENCRYPTED\s+)?PRIVATE\s+KEY(?:\s+BLOCK)?-----/g
+  },
+
+  // --- Category: Cloud & SaaS API Keys (Extended) ---
+  {
+    id: 'GCP_SERVICE_ACCOUNT',
+    name: 'Google Cloud Service Account Key File',
+    category: 'Cloud & SaaS API Keys',
+    severity: 'CRITICAL',
+    description: 'Matches Google Cloud service account JSON key files containing project IDs and embedded private keys.',
+    remediation: 'Delete the service account key from GCP IAM console, remove from source, use Workload Identity Federation instead.',
+    regex: /"type"\s*:\s*"service_account"[\s\S]{0,500}"private_key"\s*:\s*"/g
+  },
+  {
+    id: 'AZURE_SUBSCRIPTION_KEY',
+    name: 'Azure Cognitive Services / Subscription Key',
+    category: 'Cloud & SaaS API Keys',
+    severity: 'HIGH',
+    description: 'Matches Azure subscription keys and Cognitive Services API keys assigned in code or config.',
+    remediation: 'Rotate the Azure subscription key and use Azure Key Vault for secret management.',
+    regex: /(?:azure|az)[._-]*(?:subscription|cognitive|search|openai)[._-]*(?:api[._-]*)?key\s*[:=]\s*["'][a-fA-F0-9]{32}["']/gi
+  },
+  {
+    id: 'SAAS_TOKEN_EXTENDED',
+    name: 'Extended SaaS Token (Twilio, Mailgun, Datadog, Sentry, PyPI)',
+    category: 'Cloud & SaaS API Keys',
+    severity: 'HIGH',
+    description: 'Matches well-known token formats for Twilio Account SID, Mailgun, Datadog, Sentry, and other popular SaaS services.',
+    remediation: 'Rotate the token in the respective SaaS provider dashboard and use environment variables.',
+    regex: /\bAC[a-f0-9]{32}\b|\b(?:twilio|mailgun|datadog|sentry|newrelic)[._-]*(?:api[._-]*)?(?:key|token|secret)\s*[:=]\s*["']?[a-zA-Z0-9_\-]{20,}["']?/gi
+  },
+
+  // --- Category: Infrastructure as Code ---
+  {
+    id: 'TERRAFORM_HARDCODED_SECRET',
+    name: 'Terraform / IaC Hardcoded Secret Default',
+    category: 'Infrastructure as Code',
+    severity: 'HIGH',
+    description: 'Matches Terraform variable defaults and provider blocks containing hardcoded passwords, tokens, or secrets.',
+    remediation: 'Use terraform.tfvars, environment variables, or a secrets manager. Never set default values for sensitive variables.',
+    regex: /variable\s+["'][^"']*(?:password|secret|token|key|credential)[^"']*["']\s*\{[^}]*default\s*=\s*["'](?!(?:\$\{|change[_-]?me|your[_-]|example|dummy|placeholder))[^"']{3,}["']/gi,
+    fileFilter: (filePath) => /\.(tf|hcl|tfvars)$/i.test(path.extname(filePath))
+  },
+  {
+    id: 'DOCKER_HARDCODED_SECRET',
+    name: 'Dockerfile / Docker Compose Hardcoded Secret',
+    category: 'Infrastructure as Code',
+    severity: 'HIGH',
+    description: 'Matches hardcoded passwords/tokens in Dockerfile ARG/ENV instructions and docker-compose environment blocks.',
+    remediation: 'Use Docker secrets, build-time secret mounts (--mount=type=secret), or .env files excluded from version control.',
+    regex: /(?:ARG|ENV)\s+[A-Z_]*(?:PASS(?:WORD|WD)?|SECRET|TOKEN|API[_-]?KEY|PRIVATE[_-]?KEY)[A-Z_]*\s*=\s*(?!(?:\$\{|change[_-]?me|your[_-]|example|dummy|placeholder))[^\s#]{3,}/gi,
+    fileFilter: (filePath) => {
+      const base = path.basename(filePath).toLowerCase();
+      return base.startsWith('dockerfile') || /^docker-compose.*\.(yml|yaml)$/i.test(base);
+    }
+  },
+  {
+    id: 'CICD_INLINE_SECRET',
+    name: 'CI/CD Pipeline Inline Secret',
+    category: 'Infrastructure as Code',
+    severity: 'HIGH',
+    description: 'Matches hardcoded secrets in GitHub Actions, GitLab CI, Jenkins, and CircleCI pipeline environment definitions.',
+    remediation: 'Use CI/CD platform secret stores (GitHub Secrets, GitLab CI Variables, Jenkins Credentials) instead of inline values.',
+    regex: /^[ \t]*[A-Z_]*(?:PASSWORD|SECRET|TOKEN|API[_-]?KEY|PRIVATE[_-]?KEY|ACCESS[_-]?KEY)[A-Z_]*\s*:\s*["']?(?!(?:\$\{|\$\{\{|change[_-]?me|your[_-]|example|dummy|placeholder|["']\s*$))[^\s#"']{6,}["']?/gm,
+    fileFilter: (filePath) => {
+      const base = path.basename(filePath).toLowerCase();
+      const dir = filePath.replace(/\\/g, '/');
+      return base === '.gitlab-ci.yml' || base === 'jenkinsfile' ||
+             (base.endsWith('.yml') || base.endsWith('.yaml')) && (dir.includes('.github/') || dir.includes('.circleci/'));
+    }
+  },
+
+  // --- Category: Passwords & Credentials (Extended) ---
+  {
+    id: 'SSH_PASSWORD_INLINE',
+    name: 'SSH Inline Password (sshpass / expect)',
+    category: 'Passwords & Credentials',
+    severity: 'HIGH',
+    description: 'Matches sshpass commands or expect scripts with inline SSH passwords.',
+    remediation: 'Use SSH key-based authentication instead of password-based access.',
+    regex: /sshpass\s+-p\s*['"]?(?!\$\{)[^\s'"]{3,}['"]?\s+ssh/gi
+  },
+
+  // --- Category: Credentials in Logs ---
+  {
+    id: 'SECRET_IN_LOG_STATEMENT',
+    name: 'Secret / Password Exposed in Log or Console Statement',
+    category: 'Credentials in Logs',
+    severity: 'CRITICAL',
+    description: 'Matches passwords, secrets, tokens, or API keys being printed to console, logger, or standard output. This exposes credentials in log files, monitoring dashboards, and terminal history.',
+    remediation: 'Remove the log statement or mask the sensitive value before logging. Never log credentials, even in debug mode.',
+    regex: /\b(?:console\.(?:log|info|warn|error|debug|trace)|logger?\.(?:log|info|warn|error|debug|trace|fatal)|log\.(?:info|warn|error|debug|trace|fatal)|System\.out\.print(?:ln)?|System\.err\.print(?:ln)?|print(?:ln|f)?|puts|NSLog|Log\.(?:d|i|w|e|v)|logging\.(?:info|warn|error|debug|warning|critical))\s*\(\s*(?:[^)]*\b(?:pass(?:word|wd)|pwd|secret(?:[._-]?key)?|(?:api|auth|access)[._-]?(?:key|token|secret)|private[._-]?key|credentials?|client[._-]?secret)\b[^)]*)/gi,
+    fileFilter: (filePath) => {
+      const ext = path.extname(filePath).toLowerCase();
+      return ['.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx', '.java', '.py', '.go', '.rs', '.cs', '.rb', '.php', '.kt', '.swift', '.scala', '.sh'].includes(ext);
     }
   }
 ];
 
 // ---------------------------------------------------------------------------
-// 4. Utility Functions: Secret Masking & Context Extraction
+// 4. Utility Functions: Secret Masking, Context Extraction & Smart Tagging
 // ---------------------------------------------------------------------------
+
+/**
+ * Determines the source type of a file for smart tagging in findings.
+ * Returns 'example' for example/sample/template files, 'test' for test/spec files, 'source' otherwise.
+ */
+function getSourceType(filePath) {
+  const base = path.basename(filePath).toLowerCase();
+  // Example / sample / template files
+  if (/\.(example|sample|template)$/i.test(base) ||
+      /[._-](example|sample|template)\./i.test(base) ||
+      base.includes('.example') || base.includes('.sample') || base.includes('.template')) {
+    return 'example';
+  }
+  // Test / spec / fixture files
+  if (/\.(test|spec)\./i.test(base) ||
+      /[\\/](test|tests|__tests__|__mocks__|spec|specs|fixtures)[\\/]/i.test(filePath) ||
+      /\.(test|spec)$/i.test(base.replace(path.extname(base), ''))) {
+    return 'test';
+  }
+  return 'source';
+}
+
+/**
+ * Checks if a line of code is commented out.
+ * Returns true for lines starting with //, #, *, /*, <!--, --, %, ;; , REM
+ */
+function isCommentLine(lineText) {
+  const trimmed = lineText.trim();
+  return /^(?:\/\/|#(?!!)|\/\*|\*\s|\*\/|<!--|--\s|%|;;\s|REM\s)/i.test(trimmed);
+}
+
+/**
+ * Determines if a matched value is descriptive text rather than a real secret.
+ * A string with 4+ space-separated words is almost certainly a message, not a credential.
+ * Also matches common validation/description keywords.
+ */
+function isDescriptiveText(matchedValue) {
+  // Extract the value portion from the match (after = or : and inside quotes)
+  const valueMatch = matchedValue.match(/[:=]\s*["'`]([^"'`]+)["'`]/) ||
+                     matchedValue.match(/[:=]\s*(.+)$/);
+  if (!valueMatch) return false;
+  const clean = valueMatch[1].trim();
+
+  // Count words (space-separated tokens)
+  const wordCount = clean.split(/\s+/).filter(w => w.length > 0).length;
+  if (wordCount >= 4) return true;
+
+  // Check for validation/descriptive keywords
+  const descriptivePatterns = /\b(?:must\s+contain|should\s+be|at\s+least|cannot\s+be|is\s+required|is\s+not\s+valid|characters?\s+long|minimum\s+length|maximum\s+length|not\s+provided|enter\s+your|provide\s+a|please\s+enter|type\s+your)\b/i;
+  return descriptivePatterns.test(clean);
+}
+
+/**
+ * Returns source note text based on the sourceType.
+ */
+function getSourceNote(sourceType) {
+  if (sourceType === 'example') {
+    return '⚠️ Found in an example/template file — these files are often committed by mistake and must not contain real secrets.';
+  }
+  if (sourceType === 'test') {
+    return '🧪 Found in a test/spec file. Test credentials pointing to real databases are a risk — verify these are truly mock values.';
+  }
+  return null;
+}
+
+/**
+ * Determines if a log/console statement is actually logging a secret variable,
+ * NOT just mentioning the word "password" in a descriptive string message.
+ * 
+ * True positive:  console.log("Password:", password)             — 'password' is a variable outside quotes
+ * True positive:  console.log(password)                          — 'password' is a variable
+ * True positive:  console.log(`Token: ${token}`)                 — 'token' is in template interpolation
+ * True positive:  logger.info("Key: " + apiKey)                  — 'apiKey' is outside quotes after +
+ * True positive:  console.log(`${uri.replace(pw.password, '*')}`)— 'password' is in interpolation expression
+ * False positive: console.log("inside confirm password change")  — 'password' only inside string
+ * False positive: console.log("reset-password-request done")     — 'password' only inside string
+ * False positive: console.log(`updating password`)               — 'password' only in template text
+ * False positive: console.log(`regenerate password ${dbname}`)   — 'password' in text, ${dbname} is not a secret
+ * False positive: logger.error(`Invalid secret key for: ${id}`)  — 'secret' in text, ${id} is not a secret
+ */
+function isLogStatementLoggingSecret(matchedText) {
+  // Extract everything after the opening parenthesis of the log call
+  const argsMatch = matchedText.match(/\(\s*([\s\S]*)/);
+  if (!argsMatch) return false;
+  const args = argsMatch[1];
+
+  const secretKeywordPattern = /\b(?:pass(?:word|wd)|pwd|secret(?:[._-]?key)?|(?:api|auth|access)[._-]?(?:key|token|secret)|private[._-]?key|credentials?|client[._-]?secret)\b/i;
+
+  // Step 1: Strip double-quoted and single-quoted strings entirely (literal text, not code)
+  let codeOnly = args
+    .replace(/"(?:[^"\\]|\\.)*"/g, '')
+    .replace(/'(?:[^'\\]|\\.)*'/g, '');
+
+  // Step 2: For template literals, extract ONLY ${...} interpolation expressions (those are code),
+  // discard the text parts (descriptive messages are not secrets)
+  codeOnly = codeOnly.replace(/`[^`]*`/g, (templateLiteral) => {
+    const interpolations = [];
+    templateLiteral.replace(/\$\{([^}]*)\}/g, (_, expr) => {
+      interpolations.push(expr);
+    });
+    return ' ' + interpolations.join(' ') + ' ';
+  });
+
+  // Step 3: Check if any secret keyword exists in the remaining code-only content
+  // (variable names, function arguments, property accesses — not string text)
+  return secretKeywordPattern.test(codeOnly);
+}
+
+/**
+ * Deduplicates findings that match at the same file:line:column.
+ * Keeps the finding with the highest severity (most specific rule wins).
+ */
+function deduplicateFindings(findings) {
+  const seen = new Map();
+  for (const f of findings) {
+    const key = `${f.file}:${f.line}:${f.column}`;
+    const existing = seen.get(key);
+    if (!existing || SEVERITY_LEVELS[f.severity] > SEVERITY_LEVELS[existing.severity]) {
+      seen.set(key, f);
+    }
+  }
+  // Re-assign sequential IDs
+  const deduped = [...seen.values()];
+  deduped.forEach((f, idx) => { f.id = `SEC-${idx + 1}`; });
+  return deduped;
+}
 function maskValue(value) {
   if (!value) return '****';
   const cleanVal = value.trim();
@@ -452,43 +740,165 @@ function extractContextLines(content, lineNo, contextRadius = 2) {
   return snippetLines;
 }
 
-// ---------------------------------------------------------------------------
-// 5. Recursive Directory Scanner
-// ---------------------------------------------------------------------------
-function scanFileSystem(target, rootDir, findings = [], stats = { filesScanned: 0, bytesScanned: 0, errors: 0 }) {
-  const stat = fs.statSync(target);
+function extractScriptOnlyContent(htmlContent) {
+  // Replace anything outside <script...>...</script> with spaces (preserving newlines for accurate line numbers)
+  const scriptRegex = /<script\b[^>]*>([\s\S]*?)<\/script>/gi;
+  let result = '';
+  let lastIndex = 0;
+  let match;
 
-  if (stat.isFile()) {
-    scanSingleFile(target, rootDir, findings, stats);
-    return findings;
+  while ((match = scriptRegex.exec(htmlContent)) !== null) {
+    const beforeScript = htmlContent.substring(lastIndex, match.index);
+    result += beforeScript.replace(/[^\r\n]/g, ' ');
+    const openTagEnd = match[0].indexOf(match[1]);
+    const openTag = match[0].substring(0, openTagEnd);
+    result += openTag.replace(/[^\r\n]/g, ' ');
+    result += match[1];
+    const closeTag = '</script>';
+    result += closeTag.replace(/[^\r\n]/g, ' ');
+    lastIndex = match.index + match[0].length;
+  }
+  const remaining = htmlContent.substring(lastIndex);
+  result += remaining.replace(/[^\r\n]/g, ' ');
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// 5. File Discovery, Live Progress Bar & Recursive Scanner
+// ---------------------------------------------------------------------------
+class ProgressBar {
+  constructor(total, options = {}) {
+    this.total = Math.max(1, total);
+    this.current = 0;
+    this.barLength = options.barLength || 25;
+    this.isTTY = Boolean(process.stdout.isTTY);
+    this.lastRenderTime = 0;
+    this.lastLoggedPercent = -1;
+    this.quiet = Boolean(options.quiet);
+    this.verbose = Boolean(options.verbose);
   }
 
-  const entries = fs.readdirSync(target, { withFileTypes: true });
+  update(current, currentFileRel = '') {
+    this.current = current;
+    if (this.quiet) return;
 
-  for (const entry of entries) {
-    const fullPath = path.join(target, entry.name);
+    const percent = Math.min(100, Math.floor((this.current / this.total) * 100));
+    const now = Date.now();
 
-    if (entry.isDirectory()) {
-      if (!EXCLUDE_DIRS.has(entry.name)) {
-        scanFileSystem(fullPath, rootDir, findings, stats);
+    if (this.verbose) {
+      console.log(`\x1b[90m[${percent}%] (${this.current}/${this.total}) Scanning: ${currentFileRel}\x1b[0m`);
+      return;
+    }
+
+    if (this.isTTY) {
+      // Throttle TTY redraws to at most once every 35ms (except first and last item) to prevent I/O bottleneck
+      if (current < this.total && now - this.lastRenderTime < 35) {
+        return;
       }
-    } else if (entry.isFile()) {
-      const ext = path.extname(entry.name).toLowerCase();
-      if (EXCLUDE_EXTS.has(ext) || isExcludedFile(entry.name)) {
-        continue;
+      this.lastRenderTime = now;
+
+      const completedChars = Math.round((this.current / this.total) * this.barLength);
+      const remainingChars = Math.max(0, this.barLength - completedChars);
+      const bar = '█'.repeat(completedChars) + '░'.repeat(remainingChars);
+
+      const termWidth = process.stdout.columns || 80;
+      const prefix = `\x1b[36m[${bar}]\x1b[0m \x1b[1m\x1b[37m${String(percent).padStart(3)}%\x1b[0m \x1b[90m(${this.current}/${this.total})\x1b[0m \x1b[33mScanning:\x1b[0m `;
+      
+      const plainPrefixLength = `[${bar}] ${String(percent).padStart(3)}% (${this.current}/${this.total}) Scanning: `.length;
+      const availableSpace = Math.max(10, termWidth - plainPrefixLength - 3);
+
+      let displayFile = currentFileRel;
+      if (displayFile.length > availableSpace) {
+        displayFile = '...' + displayFile.slice(-(availableSpace - 3));
       }
-      scanSingleFile(fullPath, rootDir, findings, stats);
+
+      process.stdout.write(`\r\x1b[K${prefix}\x1b[1m${displayFile}\x1b[0m`);
+    } else {
+      // Non-TTY environment (CI / piped / background execution)
+      const milestone = Math.floor(percent / 10) * 10;
+      if (milestone > this.lastLoggedPercent || current === this.total) {
+        this.lastLoggedPercent = milestone;
+        console.log(`[Scanning Progress] ${percent}% (${this.current}/${this.total} files) - ${currentFileRel}`);
+      }
     }
   }
 
+  finish() {
+    if (this.quiet) return;
+    if (this.isTTY && !this.verbose) {
+      // Clear line so summary table starts on a clean line
+      process.stdout.write('\r\x1b[K');
+    }
+  }
+}
+
+function collectCandidateFiles(target) {
+  const stat = fs.statSync(target);
+  if (stat.isFile()) {
+    const ext = path.extname(target).toLowerCase();
+    const base = path.basename(target);
+    if (!EXCLUDE_EXTS.has(ext) && !isExcludedFile(base, target)) {
+      return [target];
+    }
+    return [];
+  }
+
+  const fileList = [];
+  function walk(currentDir) {
+    let entries;
+    try {
+      entries = fs.readdirSync(currentDir, { withFileTypes: true });
+    } catch (err) {
+      return;
+    }
+
+    for (const entry of entries) {
+      const fullPath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        if (!EXCLUDE_DIRS.has(entry.name)) {
+          walk(fullPath);
+        }
+      } else if (entry.isFile()) {
+        const ext = path.extname(entry.name).toLowerCase();
+        if (EXCLUDE_EXTS.has(ext) || isExcludedFile(entry.name, fullPath)) {
+          continue;
+        }
+        fileList.push(fullPath);
+      }
+    }
+  }
+
+  walk(target);
+  return fileList;
+}
+
+function scanFileSystem(target, rootDir, findings = [], stats = { filesScanned: 0, bytesScanned: 0, errors: 0 }) {
+  const candidateFiles = collectCandidateFiles(target);
+  const totalFiles = candidateFiles.length;
+
+  if (!quietMode && !verboseMode) {
+    console.log(`\x1b[90mDiscovered \x1b[1m${totalFiles.toLocaleString()}\x1b[0m\x1b[90m eligible files to scan. Please wait...\x1b[0m\n`);
+  }
+
+  if (totalFiles === 0) {
+    return findings;
+  }
+
+  const progressBar = new ProgressBar(totalFiles, { quiet: quietMode, verbose: verboseMode });
+
+  for (let i = 0; i < candidateFiles.length; i++) {
+    const fullPath = candidateFiles[i];
+    const relPath = path.relative(rootDir, fullPath) || path.basename(fullPath);
+    progressBar.update(i + 1, relPath);
+    scanSingleFile(fullPath, rootDir, findings, stats);
+  }
+
+  progressBar.finish();
   return findings;
 }
 
 function scanSingleFile(fullPath, rootDir, findings, stats) {
   stats.filesScanned++;
-  if (verboseMode) {
-    console.log(`\x1b[90mScanning: ${path.relative(rootDir, fullPath)}\x1b[0m`);
-  }
 
   let content;
   try {
@@ -520,6 +930,17 @@ function scanSingleFile(fullPath, rootDir, findings, stats) {
 
   const relPath = path.relative(rootDir, fullPath) || path.basename(fullPath);
 
+  // For HTML files, only scan JavaScript inside <script> blocks and skip outer HTML tags
+  let scanContent = content;
+  const isHtml = ext === '.html' || ext === '.htm' || ext === '.xhtml' || ext === '.vue' || ext === '.svelte';
+  if (isHtml) {
+    scanContent = extractScriptOnlyContent(content);
+  }
+
+  // Determine source type (source / test / example) for smart tagging
+  const sourceType = getSourceType(fullPath);
+  const sourceNote = getSourceNote(sourceType);
+
   for (const pattern of PATTERNS) {
     if (pattern.fileFilter && !pattern.fileFilter(fullPath)) {
       continue;
@@ -533,17 +954,40 @@ function scanSingleFile(fullPath, rootDir, findings, stats) {
     pattern.regex.lastIndex = 0;
     let match;
 
-    while ((match = pattern.regex.exec(content)) !== null) {
+    while ((match = pattern.regex.exec(scanContent)) !== null) {
       const rawMatch = match[0];
       const matchIndex = match.index;
       const { lineNo, colNo } = getLineAndColumn(content, matchIndex);
       const contextLines = extractContextLines(content, lineNo, 2);
 
+      // FP-3: Skip descriptive text (4+ words or validation keywords) for assignment-based rules
+      const assignmentRules = ['HARDCODED_PASSWORD_ASSIGN', 'GENERIC_DEV_SECRET', 'TYPED_PASSWORD_DECLARATION', 'DB_CONFIG_PASSWORD_KEY'];
+      if (assignmentRules.includes(pattern.id) && isDescriptiveText(rawMatch)) {
+        if (pattern.regex.lastIndex === matchIndex) pattern.regex.lastIndex++;
+        continue;
+      }
+
+      // Log statement FP filter: skip if secret keyword only appears inside quoted strings (descriptive messages)
+      if (pattern.id === 'SECRET_IN_LOG_STATEMENT' && !isLogStatementLoggingSecret(rawMatch)) {
+        if (pattern.regex.lastIndex === matchIndex) pattern.regex.lastIndex++;
+        continue;
+      }
+
+      // Detect if the matching line is commented out
+      const matchingLine = content.split(/\r?\n/)[lineNo - 1] || '';
+      const commentedOut = isCommentLine(matchingLine);
+
+      // Determine effective category — reclassify test file findings
+      let effectiveCategory = pattern.category;
+      if (sourceType === 'test') {
+        effectiveCategory = 'Test Credentials';
+      }
+
       findings.push({
         id: `SEC-${findings.length + 1}`,
         ruleId: pattern.id,
         ruleName: pattern.name,
-        category: pattern.category,
+        category: effectiveCategory,
         severity: pattern.severity,
         description: pattern.description,
         remediation: pattern.remediation,
@@ -553,7 +997,11 @@ function scanSingleFile(fullPath, rootDir, findings, stats) {
         column: colNo,
         rawSecret: rawMatch,
         maskedSecret: maskValue(rawMatch),
-        context: contextLines
+        context: contextLines,
+        sourceType: sourceType,
+        sourceNote: sourceNote,
+        isCommentedOut: commentedOut,
+        commentNote: commentedOut ? '💬 This secret is in commented-out code. While inactive, it still exists in version history and is safe to remove entirely.' : null
       });
 
       // Avoid infinite loops for zero-length matches
@@ -565,832 +1013,59 @@ function scanSingleFile(fullPath, rootDir, findings, stats) {
 }
 
 // ---------------------------------------------------------------------------
-// 6. Interactive HTML Report Generator
+// 6. Reports Index Manifest & Sync Utilities
 // ---------------------------------------------------------------------------
-function escapeHtml(str) {
-  if (!str) return '';
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
-function generateHtmlReport(findings, stats, targetDir, outputPath) {
-  const criticalCount = findings.filter(f => f.severity === 'CRITICAL').length;
-  const highCount = findings.filter(f => f.severity === 'HIGH').length;
-  const mediumCount = findings.filter(f => f.severity === 'MEDIUM').length;
-  const lowCount = findings.filter(f => f.severity === 'LOW').length;
-
-  const categoriesMap = {};
-  for (const f of findings) {
-    categoriesMap[f.category] = (categoriesMap[f.category] || 0) + 1;
-  }
-
-  const categoryEntries = Object.entries(categoriesMap).sort((a, b) => b[1] - a[1]);
-  const findingsJson = JSON.stringify(findings).replace(/</g, '\\u003c');
-
-  const htmlContent = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Security Audit Report - Hardcoded Secrets Scan</title>
-  <style>
-    :root {
-      --bg-primary: #0b0f19;
-      --bg-secondary: #111827;
-      --bg-card: #1e293b;
-      --bg-hover: #283548;
-      --border-color: #334155;
-      --text-primary: #f8fafc;
-      --text-secondary: #94a3b8;
-      --text-muted: #64748b;
-      
-      --critical-color: #ef4444;
-      --critical-bg: rgba(239, 68, 68, 0.15);
-      --critical-border: rgba(239, 68, 68, 0.4);
-      
-      --high-color: #f97316;
-      --high-bg: rgba(249, 115, 22, 0.15);
-      --high-border: rgba(249, 115, 22, 0.4);
-      
-      --medium-color: #eab308;
-      --medium-bg: rgba(234, 179, 8, 0.15);
-      --medium-border: rgba(234, 179, 8, 0.4);
-      
-      --low-color: #3b82f6;
-      --low-bg: rgba(59, 130, 246, 0.15);
-      --low-border: rgba(59, 130, 246, 0.4);
-      
-      --accent-color: #06b6d4;
-      --accent-gradient: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%);
-      --card-radius: 12px;
-      --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-      background-color: var(--bg-primary);
-      color: var(--text-primary);
-      line-height: 1.6;
-      padding: 2rem 1.5rem;
-      min-height: 100vh;
-    }
-
-    .container {
-      max-width: 1300px;
-      margin: 0 auto;
-    }
-
-    /* Header Section */
-    header {
-      background: var(--bg-secondary);
-      border: 1px solid var(--border-color);
-      border-radius: var(--card-radius);
-      padding: 2rem;
-      margin-bottom: 2rem;
-      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
-      position: relative;
-      overflow: hidden;
-    }
-
-    header::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 4px;
-      background: var(--accent-gradient);
-    }
-
-    .header-top {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      flex-wrap: wrap;
-      gap: 1.5rem;
-    }
-
-    .title-group h1 {
-      font-size: 1.85rem;
-      font-weight: 700;
-      letter-spacing: -0.025em;
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-    }
-
-    .shield-icon {
-      color: var(--accent-color);
-      width: 32px;
-      height: 32px;
-    }
-
-    .subtitle {
-      color: var(--text-secondary);
-      margin-top: 0.35rem;
-      font-size: 0.95rem;
-    }
-
-    .meta-info {
-      display: flex;
-      gap: 1.5rem;
-      background: var(--bg-card);
-      border: 1px solid var(--border-color);
-      padding: 0.75rem 1.25rem;
-      border-radius: 8px;
-      font-size: 0.85rem;
-    }
-
-    .meta-item {
-      display: flex;
-      flex-direction: column;
-    }
-
-    .meta-label {
-      color: var(--text-muted);
-      text-transform: uppercase;
-      font-size: 0.7rem;
-      font-weight: 600;
-      letter-spacing: 0.05em;
-    }
-
-    .meta-val {
-      color: var(--text-primary);
-      font-weight: 500;
-      font-family: monospace;
-    }
-
-    /* Stats Overview Cards */
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 1.25rem;
-      margin-bottom: 2rem;
-    }
-
-    .stat-card {
-      background: var(--bg-secondary);
-      border: 1px solid var(--border-color);
-      border-radius: var(--card-radius);
-      padding: 1.5rem;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      transition: var(--transition);
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
-    }
-
-    .stat-card:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 15px -3px rgba(0, 0, 0, 0.4);
-    }
-
-    .stat-info .stat-value {
-      font-size: 2.2rem;
-      font-weight: 800;
-      line-height: 1;
-      margin-bottom: 0.35rem;
-    }
-
-    .stat-info .stat-name {
-      font-size: 0.85rem;
-      color: var(--text-secondary);
-      text-transform: uppercase;
-      font-weight: 600;
-      letter-spacing: 0.05em;
-    }
-
-    .stat-badge {
-      width: 48px;
-      height: 48px;
-      border-radius: 12px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.25rem;
-    }
-
-    .stat-card.critical .stat-value { color: var(--critical-color); }
-    .stat-card.critical .stat-badge { background: var(--critical-bg); color: var(--critical-color); border: 1px solid var(--critical-border); }
-    
-    .stat-card.high .stat-value { color: var(--high-color); }
-    .stat-card.high .stat-badge { background: var(--high-bg); color: var(--high-color); border: 1px solid var(--high-border); }
-    
-    .stat-card.medium .stat-value { color: var(--medium-color); }
-    .stat-card.medium .stat-badge { background: var(--medium-bg); color: var(--medium-color); border: 1px solid var(--medium-border); }
-
-    .stat-card.low .stat-value { color: var(--low-color); }
-    .stat-card.low .stat-badge { background: var(--low-bg); color: var(--low-color); border: 1px solid var(--low-border); }
-
-    /* Category Distribution */
-    .section-box {
-      background: var(--bg-secondary);
-      border: 1px solid var(--border-color);
-      border-radius: var(--card-radius);
-      padding: 1.5rem;
-      margin-bottom: 2rem;
-    }
-
-    .section-title {
-      font-size: 1.15rem;
-      font-weight: 600;
-      margin-bottom: 1rem;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    .category-pills {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.75rem;
-    }
-
-    .category-pill {
-      background: var(--bg-card);
-      border: 1px solid var(--border-color);
-      padding: 0.5rem 1rem;
-      border-radius: 20px;
-      font-size: 0.85rem;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      cursor: pointer;
-      transition: var(--transition);
-    }
-
-    .category-pill:hover, .category-pill.active {
-      border-color: var(--accent-color);
-      background: var(--bg-hover);
-    }
-
-    .category-pill .count {
-      background: rgba(255, 255, 255, 0.1);
-      padding: 0.15rem 0.5rem;
-      border-radius: 10px;
-      font-size: 0.75rem;
-      font-weight: 600;
-    }
-
-    /* Filters & Controls */
-    .controls-bar {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 1rem;
-      margin-bottom: 1.5rem;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    .search-input-wrapper {
-      position: relative;
-      flex: 1;
-      min-width: 280px;
-    }
-
-    .search-input {
-      width: 100%;
-      background: var(--bg-secondary);
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      padding: 0.75rem 1rem 0.75rem 2.5rem;
-      color: var(--text-primary);
-      font-size: 0.9rem;
-      outline: none;
-      transition: var(--transition);
-    }
-
-    .search-input:focus {
-      border-color: var(--accent-color);
-      box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.2);
-    }
-
-    .search-icon {
-      position: absolute;
-      left: 0.85rem;
-      top: 50%;
-      transform: translateY(-50%);
-      color: var(--text-muted);
-      width: 18px;
-      height: 18px;
-    }
-
-    .filter-actions {
-      display: flex;
-      gap: 0.75rem;
-      align-items: center;
-    }
-
-    select.filter-select {
-      background: var(--bg-secondary);
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      padding: 0.75rem 1rem;
-      color: var(--text-primary);
-      font-size: 0.9rem;
-      outline: none;
-      cursor: pointer;
-    }
-
-    .btn {
-      background: var(--bg-card);
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      padding: 0.75rem 1rem;
-      color: var(--text-primary);
-      font-size: 0.9rem;
-      font-weight: 500;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      transition: var(--transition);
-    }
-
-    .btn:hover {
-      background: var(--bg-hover);
-      border-color: var(--text-secondary);
-    }
-
-    .btn.primary {
-      background: var(--accent-gradient);
-      border: none;
-      color: #fff;
-      font-weight: 600;
-    }
-
-    .btn.primary:hover {
-      opacity: 0.9;
-    }
-
-    /* Findings List */
-    .finding-card {
-      background: var(--bg-secondary);
-      border: 1px solid var(--border-color);
-      border-radius: var(--card-radius);
-      margin-bottom: 1rem;
-      overflow: hidden;
-      transition: var(--transition);
-    }
-
-    .finding-card:hover {
-      border-color: var(--border-color);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-    }
-
-    .finding-card.severity-CRITICAL { border-left: 4px solid var(--critical-color); }
-    .finding-card.severity-HIGH { border-left: 4px solid var(--high-color); }
-    .finding-card.severity-MEDIUM { border-left: 4px solid var(--medium-color); }
-    .finding-card.severity-LOW { border-left: 4px solid var(--low-color); }
-
-    .finding-header {
-      padding: 1.25rem 1.5rem;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 1rem;
-      flex-wrap: wrap;
-      background: rgba(255, 255, 255, 0.01);
-      cursor: pointer;
-    }
-
-    .finding-main-info {
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-      flex-wrap: wrap;
-    }
-
-    .severity-badge {
-      font-size: 0.75rem;
-      font-weight: 700;
-      padding: 0.25rem 0.65rem;
-      border-radius: 6px;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    .severity-badge.CRITICAL { background: var(--critical-bg); color: var(--critical-color); border: 1px solid var(--critical-border); }
-    .severity-badge.HIGH { background: var(--high-bg); color: var(--high-color); border: 1px solid var(--high-border); }
-    .severity-badge.MEDIUM { background: var(--medium-bg); color: var(--medium-color); border: 1px solid var(--medium-border); }
-    .severity-badge.LOW { background: var(--low-bg); color: var(--low-color); border: 1px solid var(--low-border); }
-
-    .finding-title {
-      font-size: 1rem;
-      font-weight: 600;
-      color: var(--text-primary);
-    }
-
-    .finding-file {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: 0.85rem;
-      color: var(--text-secondary);
-      background: var(--bg-card);
-      padding: 0.2rem 0.5rem;
-      border-radius: 4px;
-      border: 1px solid var(--border-color);
-    }
-
-    .finding-category-tag {
-      font-size: 0.75rem;
-      color: var(--accent-color);
-      background: rgba(6, 182, 212, 0.1);
-      border: 1px solid rgba(6, 182, 212, 0.3);
-      padding: 0.2rem 0.5rem;
-      border-radius: 4px;
-    }
-
-    .finding-details {
-      padding: 0 1.5rem 1.5rem 1.5rem;
-      border-top: 1px solid var(--border-color);
-      background: var(--bg-card);
-    }
-
-    .finding-desc {
-      font-size: 0.9rem;
-      color: var(--text-secondary);
-      margin: 1rem 0;
-    }
-
-    /* Code Snippet Viewer */
-    .code-container {
-      background: #050811;
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: 0.85rem;
-      overflow-x: auto;
-      margin: 1rem 0;
-    }
-
-    .code-line {
-      display: flex;
-      padding: 0.25rem 0.75rem;
-      min-width: fit-content;
-    }
-
-    .code-line.target-line {
-      background: rgba(239, 68, 68, 0.12);
-      border-left: 3px solid var(--critical-color);
-    }
-
-    .code-line-num {
-      width: 45px;
-      user-select: none;
-      color: var(--text-muted);
-      text-align: right;
-      padding-right: 1rem;
-    }
-
-    .code-line-text {
-      color: #cbd5e1;
-      white-space: pre;
-    }
-
-    .highlight-secret {
-      background: rgba(239, 68, 68, 0.35);
-      color: #fecaca;
-      border-bottom: 1px dashed var(--critical-color);
-      border-radius: 2px;
-      padding: 0 3px;
-    }
-
-    .remediation-box {
-      background: rgba(6, 182, 212, 0.08);
-      border: 1px solid rgba(6, 182, 212, 0.3);
-      border-radius: 8px;
-      padding: 0.85rem 1.25rem;
-      font-size: 0.85rem;
-      margin-top: 1rem;
-      display: flex;
-      align-items: flex-start;
-      gap: 0.75rem;
-    }
-
-    .remediation-icon {
-      color: var(--accent-color);
-      flex-shrink: 0;
-      margin-top: 2px;
-    }
-
-    .remediation-title {
-      font-weight: 600;
-      color: var(--accent-color);
-      margin-bottom: 0.25rem;
-    }
-
-    .secret-toggle-btn {
-      background: transparent;
-      border: 1px solid var(--border-color);
-      border-radius: 4px;
-      padding: 0.2rem 0.5rem;
-      color: var(--text-secondary);
-      font-size: 0.75rem;
-      cursor: pointer;
-      transition: var(--transition);
-    }
-
-    .secret-toggle-btn:hover {
-      color: var(--text-primary);
-      border-color: var(--text-secondary);
-    }
-
-    .no-findings {
-      text-align: center;
-      padding: 4rem 2rem;
-      background: var(--bg-secondary);
-      border: 1px solid var(--border-color);
-      border-radius: var(--card-radius);
-    }
-
-    .no-findings-icon {
-      color: #10b981;
-      width: 64px;
-      height: 64px;
-      margin: 0 auto 1rem auto;
-    }
-
-    /* Print & Responsive */
-    @media (max-width: 768px) {
-      body { padding: 1rem; }
-      .header-top { flex-direction: column; }
-      .meta-info { flex-direction: column; width: 100%; gap: 0.5rem; }
-      .finding-header { flex-direction: column; align-items: flex-start; }
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <!-- Header -->
-    <header>
-      <div class="header-top">
-        <div class="title-group">
-          <h1>
-            <svg class="shield-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-            </svg>
-            Security Audit Report
-          </h1>
-          <p class="subtitle">Automated Hardcoded Secrets, Credentials &amp; API Key Discovery</p>
-        </div>
-
-        <div class="meta-info">
-          <div class="meta-item">
-            <span class="meta-label">Scanned Target</span>
-            <span class="meta-val">${escapeHtml(targetDir)}</span>
-          </div>
-          <div class="meta-item">
-            <span class="meta-label">Files Audited</span>
-            <span class="meta-val">${stats.filesScanned.toLocaleString()}</span>
-          </div>
-          <div class="meta-item">
-            <span class="meta-label">Scan Timestamp</span>
-            <span class="meta-val">${new Date().toLocaleString()}</span>
-          </div>
-        </div>
-      </div>
-    </header>
-
-    <!-- Stats Grid -->
-    <div class="stats-grid">
-      <div class="stat-card critical">
-        <div class="stat-info">
-          <div class="stat-value">${criticalCount}</div>
-          <div class="stat-name">Critical Risk</div>
-        </div>
-        <div class="stat-badge">🔥</div>
-      </div>
-
-      <div class="stat-card high">
-        <div class="stat-info">
-          <div class="stat-value">${highCount}</div>
-          <div class="stat-name">High Risk</div>
-        </div>
-        <div class="stat-badge">⚠️</div>
-      </div>
-
-      <div class="stat-card medium">
-        <div class="stat-info">
-          <div class="stat-value">${mediumCount}</div>
-          <div class="stat-name">Medium Risk</div>
-        </div>
-        <div class="stat-badge">🛡️</div>
-      </div>
-
-      <div class="stat-card low">
-        <div class="stat-info">
-          <div class="stat-value">${lowCount}</div>
-          <div class="stat-name">Low / Informational</div>
-        </div>
-        <div class="stat-badge">ℹ️</div>
-      </div>
-    </div>
-
-    <!-- Category Filter Bar -->
-    <div class="section-box">
-      <div class="section-title">
-        <span>Findings by Category</span>
-        <span style="font-size: 0.85rem; color: var(--text-secondary); font-weight: normal;">Click category to filter</span>
-      </div>
-      <div class="category-pills" id="categoryPills">
-        <div class="category-pill active" data-category="ALL">
-          All Categories <span class="count">${findings.length}</span>
-        </div>
-        ${categoryEntries.map(([cat, count]) => `
-          <div class="category-pill" data-category="${escapeHtml(cat)}">
-            ${escapeHtml(cat)} <span class="count">${count}</span>
-          </div>
-        `).join('')}
-      </div>
-    </div>
-
-    <!-- Search and Controls -->
-    <div class="controls-bar">
-      <div class="search-input-wrapper">
-        <svg class="search-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-        </svg>
-        <input type="text" id="searchInput" class="search-input" placeholder="Search by file name, rule name, or secret snippet..." />
-      </div>
-
-      <div class="filter-actions">
-        <select id="severityFilter" class="filter-select">
-          <option value="ALL">All Severities</option>
-          <option value="CRITICAL">Critical Only</option>
-          <option value="HIGH">High Only</option>
-          <option value="MEDIUM">Medium Only</option>
-          <option value="LOW">Low Only</option>
-        </select>
-
-        <button class="btn" id="toggleMaskBtn">
-          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-          </svg>
-          <span id="maskBtnText">Reveal Secrets</span>
-        </button>
-
-        <button class="btn" onclick="window.print()">
-          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-          </svg>
-          Export / Print
-        </button>
-      </div>
-    </div>
-
-    <!-- Findings Container -->
-    <div id="findingsContainer">
-      ${findings.length === 0 ? `
-        <div class="no-findings">
-          <svg class="no-findings-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <h2 style="font-size: 1.5rem; margin-bottom: 0.5rem;">Zero Secrets Detected!</h2>
-          <p style="color: var(--text-secondary);">No hardcoded secrets, tokens, credentials, or API keys were found matching the audit policy.</p>
-        </div>
-      ` : findings.map((f, idx) => `
-        <div class="finding-card severity-${f.severity}" data-index="${idx}" data-severity="${f.severity}" data-category="${escapeHtml(f.category)}" data-file="${escapeHtml(f.file.toLowerCase())}" data-rule="${escapeHtml(f.ruleName.toLowerCase())}">
-          <div class="finding-header" onclick="toggleDetails(${idx})">
-            <div class="finding-main-info">
-              <span class="severity-badge ${f.severity}">${f.severity}</span>
-              <span class="finding-title">${escapeHtml(f.ruleName)}</span>
-              <span class="finding-category-tag">${escapeHtml(f.category)}</span>
-            </div>
-            <div style="display: flex; align-items: center; gap: 0.75rem;">
-              <span class="finding-file">${escapeHtml(f.file)}:${f.line}</span>
-              <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" style="color: var(--text-muted); transition: var(--transition);" id="arrow-${idx}">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-              </svg>
-            </div>
-          </div>
-
-          <div class="finding-details" id="details-${idx}">
-            <div class="finding-desc">${escapeHtml(f.description)}</div>
-
-            <div class="code-container">
-              ${f.context.map(c => `
-                <div class="code-line ${c.isTarget ? 'target-line' : ''}">
-                  <span class="code-line-num">${c.line}</span>
-                  <span class="code-line-text">${escapeHtml(c.text)}</span>
-                </div>
-              `).join('')}
-            </div>
-
-            <div style="display: flex; justify-content: space-between; align-items: center; margin: 0.75rem 0;">
-              <div style="font-size: 0.85rem; color: var(--text-secondary);">
-                Detected Match: 
-                <code class="secret-text-box" data-masked="${escapeHtml(f.maskedSecret)}" data-raw="${escapeHtml(f.rawSecret)}" style="background: var(--bg-primary); padding: 0.2rem 0.5rem; border-radius: 4px; color: #f87171;">${escapeHtml(f.maskedSecret)}</code>
-              </div>
-              <button class="secret-toggle-btn" onclick="copyToClipboard('${escapeHtml(f.rawSecret.replace(/'/g, "\\'"))}')">Copy Secret</button>
-            </div>
-
-            <div class="remediation-box">
-              <svg class="remediation-icon" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <div>
-                <div class="remediation-title">Recommended Remediation</div>
-                <div>${escapeHtml(f.remediation)}</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      `).join('')}
-    </div>
-  </div>
-
-  <script>
-    const allFindings = ${findingsJson};
-    let currentCategory = 'ALL';
-    let isMasked = true;
-
-    function toggleDetails(index) {
-      const details = document.getElementById('details-' + index);
-      const arrow = document.getElementById('arrow-' + index);
-      if (details.style.display === 'none') {
-        details.style.display = 'block';
-        arrow.style.transform = 'rotate(0deg)';
-      } else {
-        details.style.display = 'none';
-        arrow.style.transform = 'rotate(-90deg)';
+function updateReportsIndex(reportsDirectory) {
+  try {
+    if (!fs.existsSync(reportsDirectory)) return [];
+    const files = fs.readdirSync(reportsDirectory);
+    const reportFiles = files.filter(f => f.endsWith('.json') && f !== 'reports.json' && f !== 'manifest.json');
+    const indexData = [];
+
+    for (const file of reportFiles) {
+      const fullPath = path.join(reportsDirectory, file);
+      try {
+        const raw = fs.readFileSync(fullPath, 'utf8');
+        const parsed = JSON.parse(raw);
+        const scan = parsed.scan || {};
+        const summary = scan.summary || parsed.summary || {};
+        indexData.push({
+          filename: file,
+          path: `reports/${file}`,
+          target: scan.target || parsed.target || '',
+          timestamp: scan.timestamp || parsed.timestamp || fs.statSync(fullPath).mtime.toISOString(),
+          formattedDate: scan.formattedDate || (scan.timestamp ? new Date(scan.timestamp).toLocaleString() : file),
+          total: summary.total !== undefined ? summary.total : (parsed.findings ? parsed.findings.length : 0),
+          critical: summary.critical || 0,
+          high: summary.high || 0,
+          medium: summary.medium || 0,
+          low: summary.low || 0
+        });
+      } catch (err) {
+        indexData.push({
+          filename: file,
+          path: `reports/${file}`,
+          target: 'Unknown',
+          timestamp: fs.statSync(fullPath).mtime.toISOString(),
+          formattedDate: file,
+          total: 0,
+          critical: 0,
+          high: 0,
+          medium: 0,
+          low: 0
+        });
       }
     }
 
-    // Category filter click
-    document.querySelectorAll('.category-pill').forEach(pill => {
-      pill.addEventListener('click', () => {
-        document.querySelectorAll('.category-pill').forEach(p => p.classList.remove('active'));
-        pill.classList.add('active');
-        currentCategory = pill.getAttribute('data-category');
-        applyFilters();
-      });
-    });
-
-    const searchInput = document.getElementById('searchInput');
-    const severityFilter = document.getElementById('severityFilter');
-
-    searchInput.addEventListener('input', applyFilters);
-    severityFilter.addEventListener('change', applyFilters);
-
-    function applyFilters() {
-      const query = searchInput.value.trim().toLowerCase();
-      const severity = severityFilter.value;
-      const cards = document.querySelectorAll('.finding-card');
-
-      cards.forEach(card => {
-        const cardSeverity = card.getAttribute('data-severity');
-        const cardCategory = card.getAttribute('data-category');
-        const cardFile = card.getAttribute('data-file');
-        const cardRule = card.getAttribute('data-rule');
-
-        const matchesCategory = currentCategory === 'ALL' || cardCategory === currentCategory;
-        const matchesSeverity = severity === 'ALL' || cardSeverity === severity;
-        const matchesQuery = !query || cardFile.includes(query) || cardRule.includes(query) || cardCategory.toLowerCase().includes(query);
-
-        if (matchesCategory && matchesSeverity && matchesQuery) {
-          card.style.display = 'block';
-        } else {
-          card.style.display = 'none';
-        }
-      });
-    }
-
-    // Mask / Unmask Toggle
-    const toggleMaskBtn = document.getElementById('toggleMaskBtn');
-    const maskBtnText = document.getElementById('maskBtnText');
-
-    toggleMaskBtn.addEventListener('click', () => {
-      isMasked = !isMasked;
-      maskBtnText.textContent = isMasked ? 'Reveal Secrets' : 'Mask Secrets';
-      
-      document.querySelectorAll('.secret-text-box').forEach(el => {
-        el.textContent = isMasked ? el.getAttribute('data-masked') : el.getAttribute('data-raw');
-      });
-    });
-
-    function copyToClipboard(text) {
-      navigator.clipboard.writeText(text).then(() => {
-        alert('Secret copied to clipboard!');
-      }).catch(err => {
-        console.error('Failed to copy: ', err);
-      });
-    }
-  </script>
-</body>
-</html>`;
-
-  fs.writeFileSync(outputPath, htmlContent, 'utf8');
+    // Sort newest first
+    indexData.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    const indexPath = path.join(reportsDirectory, 'reports.json');
+    fs.writeFileSync(indexPath, JSON.stringify(indexData, null, 2), 'utf8');
+    return indexData;
+  } catch (err) {
+    console.error(`\x1b[33m[WARNING] Could not update reports index:\x1b[0m ${err.message}`);
+    return [];
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1398,12 +1073,14 @@ function generateHtmlReport(findings, stats, targetDir, outputPath) {
 // ---------------------------------------------------------------------------
 const startTime = Date.now();
 
-console.log(`\n\x1b[1m\x1b[36m⚡ Starting Hardcoded Secrets Scan...\x1b[0m`);
-console.log(`\x1b[90mTarget Path:\x1b[0m ${resolvedTarget}`);
-console.log(`\x1b[90mMin Severity:\x1b[0m ${minSeverity}\n`);
+printBanner();
+console.log(`\x1b[90mTarget Path:\x1b[0m ${resolvedTarget}\n`);
 
 const scanStats = { filesScanned: 0, bytesScanned: 0, errors: 0 };
-const findings = scanFileSystem(resolvedTarget, resolvedTarget, [], scanStats);
+const rawFindings = scanFileSystem(resolvedTarget, resolvedTarget, [], scanStats);
+
+// Post-scan deduplication: remove overlapping matches at the same location
+const findings = deduplicateFindings(rawFindings);
 const duration = ((Date.now() - startTime) / 1000).toFixed(2);
 
 // Severity counts
@@ -1411,6 +1088,17 @@ const criticalCount = findings.filter(f => f.severity === 'CRITICAL').length;
 const highCount = findings.filter(f => f.severity === 'HIGH').length;
 const mediumCount = findings.filter(f => f.severity === 'MEDIUM').length;
 const lowCount = findings.filter(f => f.severity === 'LOW').length;
+
+// Source type counts
+const exampleFileCount = findings.filter(f => f.sourceType === 'example').length;
+const testFileCount = findings.filter(f => f.sourceType === 'test').length;
+const commentedOutCount = findings.filter(f => f.isCommentedOut).length;
+
+// Category Breakdown
+const categoriesMap = {};
+for (const f of findings) {
+  categoriesMap[f.category] = (categoriesMap[f.category] || 0) + 1;
+}
 
 // Print Summary Table
 console.log(`\x1b[1m\x1b[32mScan completed in ${duration}s!\x1b[0m`);
@@ -1421,6 +1109,14 @@ console.log(`  \x1b[31mCRITICAL:\x1b[0m ${criticalCount}`);
 console.log(`  \x1b[33mHIGH:\x1b[0m     ${highCount}`);
 console.log(`  \x1b[33mMEDIUM:\x1b[0m   ${mediumCount}`);
 console.log(`  \x1b[34mLOW:\x1b[0m      ${lowCount}\n`);
+
+if (exampleFileCount || testFileCount || commentedOutCount) {
+  console.log(`\x1b[1mSmart Tags:\x1b[0m`);
+  if (exampleFileCount) console.log(`  \x1b[36m📄 Example/Template Files:\x1b[0m ${exampleFileCount}`);
+  if (testFileCount) console.log(`  \x1b[36m🧪 Test/Spec Files:\x1b[0m        ${testFileCount}`);
+  if (commentedOutCount) console.log(`  \x1b[36m💬 Commented-Out Code:\x1b[0m     ${commentedOutCount}`);
+  console.log('');
+}
 
 if (!quietMode && findings.length > 0) {
   console.log(`\x1b[1mTop Findings Summary:\x1b[0m`);
@@ -1437,24 +1133,62 @@ if (!quietMode && findings.length > 0) {
   }
 }
 
-// Generate JSON Output if requested
-if (jsonOutput) {
-  const jsonPath = path.resolve(jsonOutput);
-  fs.writeFileSync(jsonPath, JSON.stringify({
-    target: resolvedTarget,
-    timestamp: new Date().toISOString(),
-    stats: { ...scanStats, durationSeconds: parseFloat(duration) },
-    summary: { critical: criticalCount, high: highCount, medium: mediumCount, low: lowCount, total: findings.length },
-    findings
-  }, null, 2), 'utf8');
-  console.log(`\x1b[32m[+] JSON Report saved to:\x1b[0m ${jsonPath}`);
+// Prepare reports folder
+const reportsDir = path.resolve(customReportsDir || './reports');
+if (!fs.existsSync(reportsDir)) {
+  fs.mkdirSync(reportsDir, { recursive: true });
 }
 
-// Generate HTML Report
-if (generateHtml) {
-  const htmlPath = path.resolve(htmlOutput);
-  generateHtmlReport(findings, scanStats, resolvedTarget, htmlPath);
-  console.log(`\x1b[32m[+] Interactive HTML Report generated:\x1b[0m ${htmlPath}`);
+// Determine output json path
+let jsonReportPath;
+if (customOutput) {
+  jsonReportPath = path.resolve(customOutput);
+  const parent = path.dirname(jsonReportPath);
+  if (!fs.existsSync(parent)) {
+    fs.mkdirSync(parent, { recursive: true });
+  }
+} else {
+  jsonReportPath = path.join(reportsDir, `report_${getFormattedTimestamp()}.json`);
+}
+
+// Build structured report object
+const reportData = {
+  metadata: APP_METADATA,
+  scan: {
+    target: resolvedTarget,
+    timestamp: new Date().toISOString(),
+    formattedDate: new Date().toLocaleString(),
+    stats: { ...scanStats, durationSeconds: parseFloat(duration), deduplicated: rawFindings.length - findings.length },
+    summary: {
+      critical: criticalCount,
+      high: highCount,
+      medium: mediumCount,
+      low: lowCount,
+      total: findings.length,
+      exampleFiles: exampleFileCount,
+      testFiles: testFileCount,
+      commentedOut: commentedOutCount
+    },
+    categorySummary: categoriesMap
+  },
+  findings: (maskSecrets ? findings : findings.map(f => ({ ...f, maskedSecret: f.rawSecret }))).map(f => ({
+    ...f,
+    isFalsePositive: false
+  }))
+};
+
+// Write JSON Report
+fs.writeFileSync(jsonReportPath, JSON.stringify(reportData, null, 2), 'utf8');
+console.log(`\x1b[32m[+] JSON Report saved to:\x1b[0m ${jsonReportPath}`);
+
+// Update reports manifest
+const indexData = updateReportsIndex(reportsDir);
+console.log(`\x1b[32m[+] Updated reports manifest:\x1b[0m ${path.join(reportsDir, 'reports.json')} (${indexData ? indexData.length : 0} report(s) available)`);
+
+// HTML Report Viewer
+const rootViewer = path.resolve(__dirname, 'index.html');
+if (fs.existsSync(rootViewer)) {
+  console.log(`\x1b[36m[+] HTML Report Viewer:\x1b[0m ${rootViewer}`);
 }
 
 console.log('');

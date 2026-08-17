@@ -1,0 +1,3665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IBM SecretScanner &bull; Security Audit &amp; Triage Console</title>
+  <link rel="icon" type="image/png" href="ibm-logo.png" />
+  <script>
+    (function() {
+      const saved = localStorage.getItem('secret_scanner_theme');
+      if (saved === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      } else {
+        document.documentElement.removeAttribute('data-theme');
+      }
+    })();
+  </script>
+  <style>
+    :root {
+      /* Color Palette: Enterprise Light Theme */
+      --bg-base: #f4f6f9;
+      --bg-surface: #ffffff;
+      --bg-surface-raised: #f8fafc;
+      --bg-card: #ffffff;
+      --bg-card-hover: #f1f5f9;
+      --bg-code: #f8fafc;
+      
+      --border-color: #e2e8f0;
+      --border-strong: #cbd5e1;
+      --border-accent: rgba(15, 98, 254, 0.35);
+
+      --text-primary: #0f172a;
+      --text-secondary: #475569;
+      --text-muted: #64748b;
+      --text-dim: #94a3b8;
+
+      /* IBM & Brand Accents */
+      --ibm-blue: #0f62fe;
+      --ibm-blue-hover: #0353e9;
+      --ibm-blue-glow: rgba(15, 98, 254, 0.25);
+      --accent-cyan: #0284c7;
+      --accent-gradient: linear-gradient(135deg, #0f62fe 0%, #0284c7 50%, #7c3aed 100%);
+      --accent-glow: rgba(2, 132, 199, 0.18);
+
+      /* Severity Colors & Tints */
+      --critical-color: #e11d48;
+      --critical-bg: #fff1f2;
+      --critical-border: #fecdd3;
+      --critical-glow: rgba(225, 29, 72, 0.18);
+
+      --high-color: #ea580c;
+      --high-bg: #fff7ed;
+      --high-border: #fed7aa;
+      --high-glow: rgba(234, 88, 12, 0.18);
+
+      --medium-color: #d97706;
+      --medium-bg: #fffbeb;
+      --medium-border: #fde68a;
+      --medium-glow: rgba(217, 119, 6, 0.18);
+
+      --low-color: #0284c7;
+      --low-bg: #f0f9ff;
+      --low-border: #bae6fd;
+      --low-glow: rgba(2, 132, 199, 0.18);
+
+      --fp-color: #7c3aed;
+      --fp-bg: #f5f3ff;
+      --fp-border: #ddd6fe;
+      --fp-glow: rgba(124, 58, 237, 0.18);
+
+      --success-color: #059669;
+      --success-bg: #ecfdf5;
+      --success-border: #a7f3d0;
+
+      --card-radius: 12px;
+      --radius-sm: 6px;
+      --radius-md: 8px;
+      --radius-lg: 14px;
+      --radius-pill: 9999px;
+
+      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+      --shadow-md: 0 4px 14px -2px rgba(0, 0, 0, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+      --shadow-lg: 0 12px 28px -4px rgba(0, 0, 0, 0.12), 0 4px 12px -2px rgba(0, 0, 0, 0.06);
+      
+      --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+
+      /* Typography Font Stacks: Zero External Network Requests */
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, system-ui, sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+
+    [data-theme="dark"] {
+      --bg-base: #06090f;
+      --bg-surface: #0b1322;
+      --bg-surface-raised: #101c30;
+      --bg-card: #132038;
+      --bg-card-hover: #182846;
+      --bg-code: #050811;
+      
+      --border-color: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(255, 255, 255, 0.16);
+      --border-accent: rgba(15, 98, 254, 0.4);
+
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --text-dim: #475569;
+
+      --ibm-blue: #0f62fe;
+      --ibm-blue-hover: #0353e9;
+      --ibm-blue-glow: rgba(15, 98, 254, 0.35);
+      --accent-cyan: #06b6d4;
+      --accent-gradient: linear-gradient(135deg, #0f62fe 0%, #06b6d4 50%, #8b5cf6 100%);
+      --accent-glow: rgba(6, 182, 212, 0.25);
+
+      --critical-color: #f43f5e;
+      --critical-bg: rgba(244, 63, 94, 0.12);
+      --critical-border: rgba(244, 63, 94, 0.35);
+      --critical-glow: rgba(244, 63, 94, 0.22);
+
+      --high-color: #f97316;
+      --high-bg: rgba(249, 115, 22, 0.12);
+      --high-border: rgba(249, 115, 22, 0.35);
+      --high-glow: rgba(249, 115, 22, 0.22);
+
+      --medium-color: #eab308;
+      --medium-bg: rgba(234, 179, 8, 0.12);
+      --medium-border: rgba(234, 179, 8, 0.35);
+      --medium-glow: rgba(234, 179, 8, 0.22);
+
+      --low-color: #38bdf8;
+      --low-bg: rgba(56, 189, 248, 0.12);
+      --low-border: rgba(56, 189, 248, 0.35);
+      --low-glow: rgba(56, 189, 248, 0.22);
+
+      --fp-color: #a855f7;
+      --fp-bg: rgba(168, 85, 247, 0.12);
+      --fp-border: rgba(168, 85, 247, 0.35);
+      --fp-glow: rgba(168, 85, 247, 0.22);
+
+      --success-color: #10b981;
+      --success-bg: rgba(16, 185, 129, 0.12);
+      --success-border: rgba(16, 185, 129, 0.35);
+
+      --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.25);
+      --shadow-md: 0 8px 24px -4px rgba(0, 0, 0, 0.45);
+      --shadow-lg: 0 16px 36px -6px rgba(0, 0, 0, 0.6);
+    }
+
+    /* Reset & Base */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+      color-scheme: light;
+    }
+
+    [data-theme="dark"] html {
+      color-scheme: dark;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background-color: var(--bg-base);
+      background-image: 
+        radial-gradient(ellipse 80% 50% at 50% -20%, rgba(15, 98, 254, 0.07), transparent),
+        radial-gradient(ellipse 60% 30% at 90% 10%, rgba(2, 132, 199, 0.05), transparent);
+      background-attachment: fixed;
+      color: var(--text-primary);
+      line-height: 1.55;
+      padding: 0 0 3.5rem;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      transition: background-color 0.25s ease, color 0.25s ease;
+    }
+
+    [data-theme="dark"] body {
+      background-image: 
+        radial-gradient(ellipse 80% 50% at 50% -20%, rgba(15, 98, 254, 0.15), transparent),
+        radial-gradient(ellipse 60% 30% at 90% 10%, rgba(6, 182, 212, 0.08), transparent);
+    }
+
+    .container {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 1.5rem 1.25rem 0;
+    }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: var(--bg-base);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: var(--border-strong);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--text-muted);
+    }
+
+    /* Keyboard tag */
+    kbd {
+      background: var(--bg-surface-raised);
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      box-shadow: 0 1px 1px rgba(0, 0, 0, 0.05);
+    }
+
+    /* Sticky Full-Width Top Navigation Bar */
+    .top-navbar {
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border-color);
+      padding: 0.75rem 1.5rem;
+      margin-bottom: 0;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px -2px rgba(0, 0, 0, 0.03);
+      position: sticky;
+      top: 0;
+      left: 0;
+      right: 0;
+      width: 100%;
+      z-index: 1000;
+      transition: background-color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+    }
+
+    [data-theme="dark"] .top-navbar {
+      background: rgba(11, 19, 34, 0.92);
+      box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.45);
+    }
+
+    .navbar-inner {
+      max-width: 1440px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1.25rem;
+    }
+
+    .app-brand {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .brand-icon-wrapper {
+      height: 42px;
+      padding: 0 12px;
+      background: linear-gradient(135deg, #0f62fe 0%, #0043ce 100%);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 10px var(--ibm-blue-glow);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      flex-shrink: 0;
+    }
+
+    .brand-logo-img {
+      height: 22px;
+      width: auto;
+      display: block;
+      object-fit: contain;
+    }
+
+    .brand-text-block {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .brand-title {
+      font-size: 1.2rem;
+      font-weight: 800;
+      letter-spacing: -0.025em;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      color: var(--text-primary);
+    }
+
+    .brand-title-accent {
+      background: var(--accent-gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .brand-badge {
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 0.15rem 0.55rem;
+      background: var(--low-bg);
+      border: 1px solid var(--low-border);
+      color: var(--accent-cyan);
+      border-radius: var(--radius-pill);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .live-status {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--success-color);
+      margin-top: -2px;
+    }
+
+    .live-dot {
+      width: 7px;
+      height: 7px;
+      background-color: var(--success-color);
+      border-radius: 50%;
+      display: inline-block;
+      box-shadow: 0 0 6px var(--success-color);
+      animation: pulse-live 2s infinite ease-in-out;
+    }
+
+    @keyframes pulse-live {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    .report-picker-group {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .report-select-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .report-select-wrapper::after {
+      content: '';
+      position: absolute;
+      right: 14px;
+      pointer-events: none;
+      width: 0;
+      height: 0;
+      border-left: 5px solid transparent;
+      border-right: 5px solid transparent;
+      border-top: 5px solid var(--text-secondary);
+    }
+
+    .report-select {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 0.55rem 2.2rem 0.55rem 1rem;
+      color: var(--text-primary);
+      font-size: 0.85rem;
+      font-weight: 600;
+      font-family: var(--font-mono);
+      outline: none;
+      cursor: pointer;
+      min-width: 290px;
+      max-width: 420px;
+      appearance: none;
+      -webkit-appearance: none;
+      transition: var(--transition);
+    }
+
+    .report-select:focus {
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    .btn {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 0.55rem 0.95rem;
+      color: var(--text-primary);
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      transition: var(--transition);
+      user-select: none;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .btn:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--border-strong);
+      color: var(--text-primary);
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .btn:active {
+      transform: translateY(0);
+    }
+
+    .btn.primary {
+      background: linear-gradient(135deg, var(--ibm-blue) 0%, #0043ce 100%);
+      border: 1px solid transparent;
+      color: #fff;
+      box-shadow: 0 2px 8px var(--ibm-blue-glow);
+    }
+
+    .btn.primary:hover {
+      background: linear-gradient(135deg, #2574ff 0%, #0f62fe 100%);
+      box-shadow: 0 4px 14px rgba(15, 98, 254, 0.35);
+      color: #fff;
+    }
+
+    .btn.success {
+      background: var(--success-bg);
+      border: 1px solid var(--success-border);
+      color: var(--success-color);
+    }
+
+    .btn.success:hover {
+      background: #d1fae5;
+      border-color: var(--success-color);
+      color: #047857;
+      box-shadow: 0 0 10px rgba(16, 185, 129, 0.2);
+    }
+    [data-theme="dark"] .btn.success:hover {
+      background: rgba(16, 185, 129, 0.22);
+      color: #fff;
+    }
+
+    .btn.ghost {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-secondary);
+    }
+
+    .btn.ghost:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--border-color);
+      color: var(--text-primary);
+    }
+
+    .btn-icon-only {
+      padding: 0.55rem;
+      min-width: 36px;
+    }
+
+    /* Header Banner / Metadata Section */
+    .audit-header {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 1.5rem 1.75rem;
+      margin-bottom: 1.5rem;
+      box-shadow: var(--shadow-md);
+      position: relative;
+      overflow: hidden;
+      transition: background-color 0.25s ease, border-color 0.25s ease;
+    }
+
+    .audit-header::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: var(--accent-gradient);
+    }
+
+    .header-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 1.5rem;
+    }
+
+    .header-main {
+      flex: 1;
+      min-width: 300px;
+    }
+
+    .header-main h1 {
+      font-size: 1.6rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      color: var(--text-primary);
+    }
+
+    .header-main .subtitle {
+      color: var(--text-secondary);
+      font-size: 0.88rem;
+      margin-top: 0.35rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .meta-cards-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.9rem;
+      background: var(--bg-surface-raised);
+      border: 1px solid var(--border-color);
+      padding: 1rem 1.25rem;
+      border-radius: var(--radius-md);
+      flex: 1.5;
+      min-width: min(100%, 640px);
+    }
+
+    .meta-item {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+      min-width: 0;
+    }
+
+    .meta-item.meta-target-item {
+      grid-column: 1 / -1;
+      padding-top: 0.5rem;
+      border-top: 1px dashed var(--border-color);
+    }
+
+    .meta-label {
+      color: var(--text-muted);
+      text-transform: uppercase;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .meta-val {
+      color: var(--text-primary);
+      font-weight: 600;
+      font-size: 0.88rem;
+      font-family: var(--font-mono);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .meta-val.target-path {
+      cursor: pointer;
+      position: relative;
+      white-space: normal;
+      word-break: break-all;
+      overflow: visible;
+      text-overflow: clip;
+      color: var(--accent-cyan);
+    }
+
+    .meta-val.target-path:hover {
+      text-decoration: underline;
+    }
+
+    /* Risk Breakdown Meter */
+    .risk-meter-container {
+      margin-top: 1.25rem;
+      padding-top: 1.1rem;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .risk-meter-labels {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.55rem;
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+      font-weight: 600;
+    }
+
+    .risk-bar {
+      display: flex;
+      height: 10px;
+      border-radius: var(--radius-pill);
+      overflow: hidden;
+      background: var(--border-color);
+      gap: 2px;
+      padding: 1px;
+    }
+
+    .risk-segment {
+      height: 100%;
+      transition: width 0.4s ease;
+      position: relative;
+    }
+    .risk-segment.critical { background: var(--critical-color); }
+    .risk-segment.high { background: var(--high-color); }
+    .risk-segment.medium { background: var(--medium-color); }
+    .risk-segment.low { background: var(--low-color); }
+    .risk-segment.fp { background: var(--fp-color); }
+
+    /* Stats KPI Grid */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 1.1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .stat-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 1.35rem 1.4rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transition: var(--transition);
+      position: relative;
+      overflow: hidden;
+      cursor: pointer;
+      user-select: none;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .stat-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 3px;
+      opacity: 0.75;
+      transition: var(--transition);
+    }
+
+    .stat-card.critical::before { background: var(--critical-color); }
+    .stat-card.high::before { background: var(--high-color); }
+    .stat-card.medium::before { background: var(--medium-color); }
+    .stat-card.low::before { background: var(--low-color); }
+
+    .stat-card:hover {
+      transform: translateY(-3px);
+      border-color: var(--border-strong);
+      box-shadow: var(--shadow-md);
+    }
+
+    .stat-card:hover::before {
+      opacity: 1;
+      height: 4px;
+    }
+
+    .stat-card.active-filter {
+      border-width: 1.5px;
+      transform: translateY(-3px);
+    }
+    .stat-card.critical.active-filter {
+      border-color: var(--critical-color);
+      background: linear-gradient(180deg, var(--critical-bg) 0%, var(--bg-surface) 100%);
+      box-shadow: 0 0 16px var(--critical-glow);
+    }
+    .stat-card.high.active-filter {
+      border-color: var(--high-color);
+      background: linear-gradient(180deg, var(--high-bg) 0%, var(--bg-surface) 100%);
+      box-shadow: 0 0 16px var(--high-glow);
+    }
+    .stat-card.medium.active-filter {
+      border-color: var(--medium-color);
+      background: linear-gradient(180deg, var(--medium-bg) 0%, var(--bg-surface) 100%);
+      box-shadow: 0 0 16px var(--medium-glow);
+    }
+    .stat-card.low.active-filter {
+      border-color: var(--low-color);
+      background: linear-gradient(180deg, var(--low-bg) 0%, var(--bg-surface) 100%);
+      box-shadow: 0 0 16px var(--low-glow);
+    }
+
+    .stat-info .stat-value {
+      font-size: 2.3rem;
+      font-weight: 800;
+      line-height: 1.05;
+      margin-bottom: 0.35rem;
+      font-family: var(--font-mono);
+      letter-spacing: -0.03em;
+    }
+
+    .stat-info .stat-name {
+      font-size: 0.76rem;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .stat-percentage {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-top: 0.2rem;
+    }
+
+    .stat-badge-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.35rem;
+      flex-shrink: 0;
+    }
+
+    .stat-card.critical .stat-value { color: var(--critical-color); }
+    .stat-card.critical .stat-badge-icon { background: var(--critical-bg); color: var(--critical-color); border: 1px solid var(--critical-border); }
+    
+    .stat-card.high .stat-value { color: var(--high-color); }
+    .stat-card.high .stat-badge-icon { background: var(--high-bg); color: var(--high-color); border: 1px solid var(--high-border); }
+    
+    .stat-card.medium .stat-value { color: var(--medium-color); }
+    .stat-card.medium .stat-badge-icon { background: var(--medium-bg); color: var(--medium-color); border: 1px solid var(--medium-border); }
+
+    .stat-card.low .stat-value { color: var(--low-color); }
+    .stat-card.low .stat-badge-icon { background: var(--low-bg); color: var(--low-color); border: 1px solid var(--low-border); }
+
+    /* Segmented Navigation Tabs */
+    .view-tabs-container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 1.25rem;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 0.65rem 1rem;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .view-tabs {
+      display: flex;
+      gap: 0.5rem;
+      background: var(--bg-base);
+      padding: 0.35rem;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-color);
+    }
+
+    .view-tab {
+      background: transparent;
+      border: 1px solid transparent;
+      padding: 0.55rem 1.15rem;
+      border-radius: var(--radius-sm);
+      color: var(--text-secondary);
+      font-size: 0.86rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      transition: var(--transition);
+      user-select: none;
+    }
+
+    .view-tab:hover {
+      color: var(--text-primary);
+      background: var(--bg-surface);
+    }
+
+    .view-tab.active {
+      background: var(--bg-surface);
+      color: var(--accent-cyan);
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--border-color);
+    }
+
+    .view-tab.active.fp-tab {
+      color: var(--fp-color);
+      border: 1px solid var(--fp-border);
+    }
+
+    .tab-badge {
+      font-size: 0.72rem;
+      font-family: var(--font-mono);
+      padding: 0.15rem 0.55rem;
+      border-radius: var(--radius-pill);
+      font-weight: 800;
+      background: var(--border-color);
+      color: var(--text-secondary);
+    }
+
+    .view-tab.active .tab-badge {
+      background: var(--low-bg);
+      color: var(--accent-cyan);
+    }
+
+    .view-tab.active.fp-tab .tab-badge {
+      background: var(--fp-bg);
+      color: var(--fp-color);
+    }
+
+    .view-status-badge {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    /* Category Filter Section */
+    .section-box {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 1.15rem 1.4rem;
+      margin-bottom: 1.25rem;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .section-title {
+      font-size: 0.86rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-secondary);
+      margin-bottom: 0.85rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .category-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.55rem;
+    }
+
+    .category-pill {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      padding: 0.4rem 0.85rem;
+      border-radius: var(--radius-pill);
+      font-size: 0.8rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      cursor: pointer;
+      transition: var(--transition);
+      color: var(--text-secondary);
+      user-select: none;
+    }
+
+    .category-pill:hover {
+      border-color: var(--border-strong);
+      color: var(--text-primary);
+      background: var(--bg-surface-raised);
+      transform: translateY(-1px);
+    }
+
+    .category-pill.active {
+      border-color: var(--accent-cyan);
+      background: var(--low-bg);
+      color: var(--accent-cyan);
+      box-shadow: 0 0 10px var(--accent-glow);
+    }
+
+    .category-pill.active-fp {
+      border-color: var(--fp-color);
+      background: var(--fp-bg);
+      color: var(--fp-color);
+      box-shadow: 0 0 10px var(--fp-glow);
+    }
+
+    .category-pill .count {
+      background: var(--border-color);
+      padding: 0.1rem 0.45rem;
+      border-radius: var(--radius-pill);
+      font-size: 0.72rem;
+      font-weight: 700;
+      font-family: var(--font-mono);
+      color: var(--text-secondary);
+      pointer-events: none;
+    }
+
+    /* Controls Bar & Toolbar */
+    .controls-bar {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 0.85rem 1.25rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.85rem;
+      margin-bottom: 1.5rem;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .search-input-wrapper {
+      position: relative;
+      flex: 1;
+      min-width: 290px;
+    }
+
+    .search-input {
+      width: 100%;
+      background: var(--bg-base);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 0.6rem 2.6rem 0.6rem 2.4rem;
+      color: var(--text-primary);
+      font-size: 0.88rem;
+      font-family: inherit;
+      outline: none;
+      transition: var(--transition);
+    }
+
+    .search-input:focus {
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+      background: var(--bg-surface);
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 0.85rem;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      width: 16px;
+      height: 16px;
+      pointer-events: none;
+    }
+
+    .search-clear-btn {
+      position: absolute;
+      right: 0.75rem;
+      top: 50%;
+      transform: translateY(-50%);
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: none;
+      padding: 2px;
+      font-size: 0.85rem;
+    }
+    .search-clear-btn:hover { color: var(--text-primary); }
+
+    .search-kbd-badge {
+      position: absolute;
+      right: 0.75rem;
+      top: 50%;
+      transform: translateY(-50%);
+      background: var(--bg-surface-raised);
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      padding: 0.1rem 0.35rem;
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      pointer-events: none;
+    }
+
+    .filter-actions {
+      display: flex;
+      gap: 0.6rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .custom-select {
+      background: var(--bg-base);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 0.55rem 1.8rem 0.55rem 0.85rem;
+      color: var(--text-primary);
+      font-size: 0.82rem;
+      font-weight: 600;
+      outline: none;
+      cursor: pointer;
+      transition: var(--transition);
+      appearance: none;
+      -webkit-appearance: none;
+      position: relative;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' viewBox='0 0 24 24' stroke='%23475569'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 0.65rem center;
+    }
+
+    .custom-select:focus {
+      border-color: var(--accent-cyan);
+    }
+
+    /* Results Header / Live Counter */
+    .results-info-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.85rem;
+      padding: 0 0.25rem;
+      font-size: 0.82rem;
+      color: var(--text-secondary);
+    }
+
+    .results-count {
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    /* Findings Cards */
+    .finding-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      margin-bottom: 0.85rem;
+      overflow: hidden;
+      box-shadow: var(--shadow-sm);
+      transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+      will-change: transform, opacity;
+      position: relative;
+    }
+
+    .finding-card:hover {
+      border-color: var(--border-strong);
+      box-shadow: var(--shadow-md);
+    }
+
+    .finding-card.severity-CRITICAL,
+    .finding-card.severity-HIGH,
+    .finding-card.severity-MEDIUM,
+    .finding-card.severity-LOW,
+    .finding-card.is-fp {
+      border-left: 1px solid var(--border-color);
+    }
+
+    /* Slide Out Animations */
+    .finding-card.sliding-out-right {
+      transform: translateX(105%) !important;
+      opacity: 0 !important;
+      max-height: 0 !important;
+      margin-top: 0 !important;
+      margin-bottom: 0 !important;
+      padding-top: 0 !important;
+      padding-bottom: 0 !important;
+      border-top-width: 0 !important;
+      border-bottom-width: 0 !important;
+      pointer-events: none !important;
+    }
+
+    .finding-card.sliding-out-left {
+      transform: translateX(-105%) !important;
+      opacity: 0 !important;
+      max-height: 0 !important;
+      margin-top: 0 !important;
+      margin-bottom: 0 !important;
+      padding-top: 0 !important;
+      padding-bottom: 0 !important;
+      border-top-width: 0 !important;
+      border-bottom-width: 0 !important;
+      pointer-events: none !important;
+    }
+
+    .finding-header {
+      padding: 1rem 1.35rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+      background: var(--bg-surface);
+      cursor: pointer;
+      user-select: none;
+      transition: var(--transition);
+    }
+
+    .finding-header:hover {
+      background: var(--bg-surface-raised);
+    }
+
+    .finding-header-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      width: 100%;
+    }
+
+    .finding-header-sub {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      width: 100%;
+    }
+
+    .finding-main-info {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .severity-badge {
+      font-size: 0.68rem;
+      font-weight: 800;
+      padding: 0.2rem 0.55rem;
+      border-radius: var(--radius-sm);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-family: var(--font-mono);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .severity-badge.CRITICAL { background: var(--critical-bg); color: var(--critical-color); border: 1px solid var(--critical-border); }
+    .severity-badge.HIGH { background: var(--high-bg); color: var(--high-color); border: 1px solid var(--high-border); }
+    .severity-badge.MEDIUM { background: var(--medium-bg); color: var(--medium-color); border: 1px solid var(--medium-border); }
+    .severity-badge.LOW { background: var(--low-bg); color: var(--low-color); border: 1px solid var(--low-border); }
+
+    .finding-title {
+      font-size: 0.94rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: -0.01em;
+    }
+
+    .finding-id-pill {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      background: var(--bg-base);
+      border: 1px solid var(--border-color);
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+
+    .finding-category-tag {
+      font-size: 0.72rem;
+      color: var(--accent-cyan);
+      background: var(--low-bg);
+      border: 1px solid var(--low-border);
+      padding: 0.15rem 0.5rem;
+      border-radius: var(--radius-pill);
+      font-weight: 600;
+    }
+
+    .fp-badge-tag {
+      font-size: 0.72rem;
+      color: var(--fp-color);
+      background: var(--fp-bg);
+      border: 1px solid var(--fp-border);
+      padding: 0.15rem 0.55rem;
+      border-radius: var(--radius-pill);
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+
+    .finding-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      flex-shrink: 0;
+      margin-left: auto;
+    }
+
+    .finding-file-pill {
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+      background: var(--bg-surface-raised);
+      padding: 0.3rem 0.75rem;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-color);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      cursor: copy;
+      transition: var(--transition);
+      word-break: break-all;
+      max-width: 100%;
+    }
+
+    .finding-file-pill:hover {
+      border-color: var(--accent-cyan);
+      color: var(--accent-cyan);
+      background: var(--bg-surface);
+      box-shadow: 0 0 10px var(--accent-glow);
+    }
+
+    .file-path-text {
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+
+    .file-line-badge {
+      background: var(--low-bg);
+      color: var(--accent-cyan);
+      border: 1px solid var(--low-border);
+      padding: 0.1rem 0.45rem;
+      border-radius: 4px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .fp-action-btn {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      padding: 0.32rem 0.75rem;
+      color: var(--text-secondary);
+      font-size: 0.76rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      transition: var(--transition);
+      user-select: none;
+    }
+
+    .fp-action-btn:hover {
+      background: var(--bg-surface-raised);
+      color: var(--text-primary);
+      border-color: var(--border-strong);
+      transform: translateY(-1px);
+    }
+
+    .fp-action-btn.mark-fp:hover {
+      color: #e11d48;
+      border-color: #fecdd3;
+      background: #fff1f2;
+      box-shadow: 0 0 10px rgba(225, 29, 72, 0.15);
+    }
+
+    .fp-action-btn.revert-fp {
+      color: #059669;
+      border-color: #a7f3d0;
+      background: #ecfdf5;
+    }
+
+    .fp-action-btn.revert-fp:hover {
+      background: #d1fae5;
+      border-color: #059669;
+      color: #047857;
+      box-shadow: 0 0 10px rgba(16, 185, 129, 0.2);
+    }
+
+    .chevron-icon {
+      color: var(--text-muted);
+      transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      transform: rotate(-90deg);
+      flex-shrink: 0;
+    }
+
+    .finding-details {
+      padding: 0 1.35rem 1.35rem;
+      border-top: 1px solid var(--border-color);
+      background: var(--bg-surface-raised);
+      display: none;
+    }
+
+    .finding-details.open {
+      display: block;
+      animation: fadeInDetails 0.25s ease;
+    }
+
+    @keyframes fadeInDetails {
+      from { opacity: 0; transform: translateY(-4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .finding-desc-card {
+      font-size: 0.88rem;
+      color: var(--text-secondary);
+      margin: 1.1rem 0 0.85rem;
+      line-height: 1.6;
+      background: var(--bg-surface-raised);
+      border: 1px solid var(--border-color);
+      padding: 0.85rem 1.1rem;
+      border-radius: var(--radius-md);
+    }
+
+    /* Code Snippet IDE Viewer */
+    .code-window {
+      background: var(--bg-code);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      margin: 0.85rem 0;
+      overflow: hidden;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .code-window-header {
+      background: var(--bg-surface-raised);
+      border-bottom: 1px solid var(--border-color);
+      padding: 0.45rem 0.85rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.76rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+
+    .code-window-title {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+
+    .code-container {
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      overflow-x: auto;
+      padding: 0.45rem 0;
+    }
+
+    .code-line {
+      display: flex;
+      padding: 0.22rem 0.85rem;
+      min-width: fit-content;
+      line-height: 1.45;
+    }
+
+    .code-line.target-line {
+      background: var(--critical-bg);
+      border-left: 3px solid var(--critical-color);
+    }
+
+    .code-line-num {
+      width: 48px;
+      user-select: none;
+      color: var(--text-dim);
+      text-align: right;
+      padding-right: 1.1rem;
+      flex-shrink: 0;
+    }
+
+    .code-line.target-line .code-line-num {
+      color: var(--critical-color);
+      font-weight: 700;
+    }
+
+    .code-line-text {
+      color: var(--text-primary);
+      white-space: pre;
+    }
+
+    .highlight-secret {
+      background: #fecdd3;
+      color: #9f1239;
+      border: 1px dashed var(--critical-color);
+      border-radius: 3px;
+      padding: 0 4px;
+      font-weight: 700;
+    }
+    [data-theme="dark"] .highlight-secret {
+      background: rgba(244, 63, 94, 0.38);
+      color: #ffe4e6;
+    }
+
+    /* Secret Inspection & Action Row */
+    .secret-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin: 0.85rem 0;
+      padding: 0.75rem 1rem;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+
+    .secret-preview-box {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      font-size: 0.84rem;
+      color: var(--text-secondary);
+      flex: 1;
+      min-width: 260px;
+    }
+
+    .secret-code-token {
+      background: var(--bg-code);
+      padding: 0.3rem 0.7rem;
+      border-radius: var(--radius-sm);
+      color: var(--critical-color);
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      border: 1px solid var(--critical-border);
+      word-break: break-all;
+      font-weight: 600;
+    }
+
+    .secret-actions-group {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+
+    /* Remediation Box */
+    .remediation-box {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: var(--radius-md);
+      padding: 0.9rem 1.15rem;
+      font-size: 0.85rem;
+      margin-top: 1rem;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.85rem;
+    }
+    [data-theme="dark"] .remediation-box {
+      background: rgba(6, 182, 212, 0.06);
+      border-color: rgba(6, 182, 212, 0.25);
+    }
+
+    .remediation-icon {
+      color: #0284c7;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+    [data-theme="dark"] .remediation-icon {
+      color: var(--accent-cyan);
+    }
+
+    .remediation-title {
+      font-weight: 700;
+      color: #0284c7;
+      margin-bottom: 0.25rem;
+      font-size: 0.88rem;
+    }
+    [data-theme="dark"] .remediation-title {
+      color: var(--accent-cyan);
+    }
+
+    .remediation-body {
+      color: #1e293b;
+      line-height: 1.5;
+    }
+    [data-theme="dark"] .remediation-body {
+      color: #cbd5e1;
+    }
+
+    /* Pagination Controls */
+    .pagination-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 1.5rem;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 0.85rem 1.25rem;
+      flex-wrap: wrap;
+      gap: 1rem;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .pagination-info {
+      font-size: 0.82rem;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    .pagination-buttons {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .page-btn {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      color: var(--text-primary);
+      min-width: 34px;
+      height: 34px;
+      padding: 0 0.6rem;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: var(--transition);
+    }
+
+    .page-btn:hover:not(:disabled) {
+      background: var(--bg-surface-raised);
+      border-color: var(--border-strong);
+    }
+
+    .page-btn.active {
+      background: var(--ibm-blue);
+      border-color: var(--ibm-blue);
+      color: #fff;
+      box-shadow: 0 0 10px var(--ibm-blue-glow);
+    }
+
+    .page-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* Empty / No Findings States */
+    .empty-state {
+      text-align: center;
+      padding: 4.5rem 2rem;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .empty-state-icon-box {
+      width: 72px;
+      height: 72px;
+      border-radius: 20px;
+      background: #ecfdf5;
+      border: 1px solid #a7f3d0;
+      color: var(--success-color);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 1.25rem;
+    }
+    [data-theme="dark"] .empty-state-icon-box {
+      background: rgba(16, 185, 129, 0.1);
+      border-color: var(--success-border);
+    }
+
+    .empty-state-icon-box.warning {
+      background: #fffbeb;
+      border-color: #fde68a;
+      color: #d97706;
+    }
+    [data-theme="dark"] .empty-state-icon-box.warning {
+      background: rgba(234, 179, 8, 0.1);
+      border-color: var(--medium-border);
+    }
+
+    .empty-state-icon-box.neutral {
+      background: var(--bg-surface-raised);
+      border-color: var(--border-color);
+      color: var(--text-muted);
+    }
+
+    .empty-state h2 {
+      font-size: 1.45rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.5rem;
+      color: var(--text-primary);
+    }
+
+    .empty-state p {
+      color: var(--text-secondary);
+      max-width: 540px;
+      margin: 0 auto 1.5rem;
+      font-size: 0.9rem;
+    }
+
+    /* Drag & Drop Overlay */
+    .dropzone-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(248, 250, 252, 0.92);
+      border: 3px dashed var(--accent-cyan);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      transition: var(--transition);
+    }
+    [data-theme="dark"] .dropzone-overlay {
+      background: rgba(6, 9, 15, 0.92);
+    }
+
+    .dropzone-overlay.active {
+      display: flex;
+      animation: fadeInDrop 0.2s ease;
+    }
+
+    @keyframes fadeInDrop {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    .dropzone-content {
+      text-align: center;
+      color: var(--text-primary);
+      padding: 3rem;
+      border-radius: var(--radius-lg);
+      background: var(--bg-surface);
+      border: 1px solid var(--border-strong);
+      box-shadow: var(--shadow-lg);
+      max-width: 500px;
+    }
+
+    .dropzone-icon {
+      width: 72px;
+      height: 72px;
+      color: var(--accent-cyan);
+      margin-bottom: 1.25rem;
+      animation: bounce 1.8s infinite;
+    }
+
+    @keyframes bounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+    }
+
+    /* Footer */
+    footer {
+      margin-top: 3.5rem;
+      padding: 2rem 0 1rem;
+      border-top: 1px solid var(--border-color);
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.82rem;
+    }
+
+    .footer-brand {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      color: var(--text-secondary);
+      font-weight: 600;
+      margin-bottom: 0.35rem;
+    }
+
+    /* Toast Alert Notification */
+    .toast-container {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 10000;
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+      pointer-events: none;
+    }
+
+    .toast-message {
+      background: #0f172a;
+      border: 1px solid #334155;
+      color: #ffffff;
+      padding: 0.75rem 1.25rem;
+      border-radius: var(--radius-md);
+      font-weight: 600;
+      font-size: 0.84rem;
+      box-shadow: var(--shadow-lg);
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      animation: slideInToast 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+      backdrop-filter: blur(10px);
+      pointer-events: auto;
+    }
+
+    /* Full File Modal Popup */
+    .file-modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(15, 23, 42, 0.65);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      z-index: 10000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+    }
+
+    [data-theme="dark"] .file-modal-overlay {
+      background: rgba(0, 0, 0, 0.8);
+    }
+
+    .file-modal-overlay.open {
+      display: flex;
+      animation: modalFadeIn 0.2s ease;
+    }
+
+    @keyframes modalFadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    .file-modal-dialog {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      width: min(100%, 1150px);
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+      overflow: hidden;
+      animation: modalScaleIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes modalScaleIn {
+      from { transform: scale(0.96) translateY(12px); opacity: 0; }
+      to { transform: scale(1) translateY(0); opacity: 1; }
+    }
+
+    .file-modal-header {
+      padding: 1rem 1.4rem;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      background: var(--bg-surface);
+      flex-wrap: wrap;
+    }
+
+    .file-modal-title-box {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      min-width: 0;
+      flex: 1;
+    }
+
+    .file-modal-icon {
+      width: 38px;
+      height: 38px;
+      border-radius: 8px;
+      background: var(--low-bg);
+      border: 1px solid var(--low-border);
+      color: var(--accent-cyan);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .file-modal-filename {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: -0.01em;
+      font-family: var(--font-mono);
+    }
+
+    .file-modal-filepath {
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+      cursor: copy;
+      font-family: var(--font-mono);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 550px;
+    }
+    .file-modal-filepath:hover {
+      color: var(--accent-cyan);
+      text-decoration: underline;
+    }
+
+    .file-modal-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-shrink: 0;
+    }
+
+    .file-modal-toolbar {
+      padding: 0.5rem 1.4rem;
+      background: var(--bg-surface-raised);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+    }
+
+    .file-modal-search {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      padding: 0.35rem 0.75rem;
+      font-size: 0.78rem;
+      color: var(--text-primary);
+      outline: none;
+      width: 220px;
+      font-family: inherit;
+    }
+    .file-modal-search:focus {
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 0 2px var(--accent-glow);
+    }
+
+    .file-modal-body {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: auto;
+      background: var(--bg-code);
+      padding: 0.5rem 0;
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      position: relative;
+      min-height: 320px;
+    }
+
+    .modal-code-line {
+      display: flex;
+      padding: 0.18rem 1rem;
+      line-height: 1.5;
+      min-width: fit-content;
+      transition: background-color 0.15s ease;
+    }
+
+    .modal-code-line:hover {
+      background: rgba(15, 98, 254, 0.05);
+    }
+
+    .modal-code-line.target-finding-line {
+      background: var(--critical-bg) !important;
+      border-left: 4px solid var(--critical-color);
+      box-shadow: inset 0 0 8px var(--critical-glow);
+    }
+
+    .modal-code-line.highlight-search-line {
+      background: rgba(234, 179, 8, 0.15) !important;
+    }
+
+    .modal-line-num {
+      width: 56px;
+      color: var(--text-dim);
+      text-align: right;
+      padding-right: 1.25rem;
+      user-select: none;
+      flex-shrink: 0;
+    }
+
+    .modal-code-line.target-finding-line .modal-line-num {
+      color: var(--critical-color);
+      font-weight: 800;
+    }
+
+    .modal-line-code {
+      color: var(--text-primary);
+      white-space: pre;
+      flex: 1;
+    }
+
+    .modal-loading-spinner {
+      padding: 4rem 2rem;
+      text-align: center;
+      color: var(--text-secondary);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1rem;
+      font-family: inherit;
+    }
+
+    .spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid var(--border-strong);
+      border-top-color: var(--ibm-blue);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    @keyframes slideInToast {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+      .top-navbar {
+        padding: 0.75rem 1rem;
+      }
+      .navbar-inner {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .report-picker-group {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .report-select {
+        max-width: none;
+        width: 100%;
+        min-width: 0;
+      }
+      .header-content {
+        flex-direction: column;
+      }
+      .meta-cards-grid {
+        min-width: 100%;
+        grid-template-columns: 1fr 1fr;
+      }
+      .controls-bar {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .filter-actions {
+        width: 100%;
+        justify-content: space-between;
+      }
+      .finding-header {
+        padding: 0.85rem 1rem;
+      }
+      .finding-file-pill {
+        max-width: 100%;
+      }
+    }
+
+    @media (max-width: 600px) {
+      body { padding: 1rem 0.75rem 2.5rem; }
+      .meta-cards-grid { grid-template-columns: 1fr; }
+      .stats-grid { grid-template-columns: 1fr; }
+    }
+
+    /* Print Style Sheet */
+    @media print {
+      body {
+        background: #fff !important;
+        color: #000 !important;
+        padding: 0 !important;
+      }
+      .top-navbar, .controls-bar, .section-box, .view-tabs-container, .pagination-bar, .fp-action-btn, .search-kbd-badge, .btn {
+        display: none !important;
+      }
+      .audit-header {
+        border-color: #ddd;
+        background: #f8fafc !important;
+      }
+      .meta-cards-grid {
+        background: #fff !important;
+        border-color: #ddd;
+      }
+      .meta-val, .meta-label, .header-main h1, .header-main .subtitle {
+        color: #000 !important;
+      }
+      .finding-card {
+        border: 1px solid #ccc !important;
+        background: #fff !important;
+        page-break-inside: avoid;
+        margin-bottom: 1rem;
+      }
+      .finding-header {
+        background: #f1f5f9 !important;
+      }
+      .finding-title, .finding-file-pill {
+        color: #000 !important;
+      }
+      .finding-details {
+        display: block !important;
+        background: #fff !important;
+      }
+      .code-window {
+        background: #f8fafc !important;
+        border-color: #ddd !important;
+      }
+      .code-line-text {
+        color: #000 !important;
+      }
+      .remediation-box {
+        background: #eff6ff !important;
+        border-color: #bfdbfe !important;
+      }
+      .remediation-body {
+        color: #1e293b !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Top Navigation Bar & Global Report Switcher (Sticky at top) -->
+  <nav class="top-navbar">
+    <div class="navbar-inner">
+      <a href="#" class="app-brand" onclick="window.scrollTo({top: 0, behavior: 'smooth'}); return false;">
+        <div class="brand-icon-wrapper" title="IBM Security Enterprise Audit">
+          <img src="ibm-logo.png" alt="IBM Security" class="brand-logo-img" />
+        </div>
+        <div class="brand-text-block">
+          <div class="brand-title">
+            IBM <span class="brand-title-accent">SecretScanner</span>
+            <span class="brand-badge">Audit Console</span>
+          </div>
+          <div class="live-status">
+            <span class="live-dot"></span>
+            <span>Real-time Triage &amp; Sync</span>
+          </div>
+        </div>
+      </a>
+
+      <div class="report-picker-group">
+        <div class="report-select-wrapper" title="Select audit report">
+          <select id="reportSelect" class="report-select" onchange="onReportSelectChange()">
+            <option value="" disabled selected>Loading reports...</option>
+          </select>
+        </div>
+
+        <input type="file" id="fileInput" accept=".json" style="display:none;" onchange="handleFileUpload(event)" />
+        
+        <button class="btn" onclick="document.getElementById('fileInput').click()" title="Load local JSON scan file (Ctrl+O)">
+          <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+          </svg>
+          Load Report
+        </button>
+
+        <button class="btn success" onclick="exportUpdatedJson()" title="Save triage changes directly to disk / download JSON">
+          <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+          </svg>
+          Save Changes
+        </button>
+
+        <button class="btn btn-icon-only" onclick="fetchReportsIndex()" title="Refresh reports list">
+          <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+        </button>
+
+        <button class="btn btn-icon-only" id="themeToggleBtn" onclick="toggleTheme()" title="Switch to Dark Theme">
+          <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container">
+    <!-- Header / Metadata Section -->
+    <header class="audit-header">
+      <div class="header-content">
+        <div class="header-main">
+          <h1 id="headerTitle">
+            <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" style="color: var(--accent-cyan); flex-shrink: 0;">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+            </svg>
+            Security Audit Overview
+          </h1>
+          <p class="subtitle" id="headerSubtitle">
+            Enterprise Hardcoded Credentials, API Keys, Tokens &amp; Private Key Discovery
+          </p>
+        </div>
+
+        <div class="meta-cards-grid">
+          <div class="meta-item">
+            <span class="meta-label">
+              <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+              Files Audited
+            </span>
+            <span class="meta-val" id="metaFiles">-</span>
+          </div>
+
+          <div class="meta-item">
+            <span class="meta-label">
+              <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              Timestamp
+            </span>
+            <span class="meta-val" id="metaTimestamp">-</span>
+          </div>
+
+          <div class="meta-item">
+            <span class="meta-label">
+              <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+              Performance
+            </span>
+            <span class="meta-val" id="metaStats">-</span>
+          </div>
+
+          <div class="meta-item meta-target-item">
+            <span class="meta-label">
+              <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
+              Audit Target
+            </span>
+            <span class="meta-val target-path" id="metaTarget" onclick="copyTargetText()" title="Click to copy target path">-</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Proportional Risk Breakdown Bar -->
+      <div class="risk-meter-container">
+        <div class="risk-meter-labels">
+          <span>Risk Distribution</span>
+          <span id="riskDistributionSummary">0 Active Findings &bull; 0 False Positives</span>
+        </div>
+        <div class="risk-bar" id="riskBar">
+          <div class="risk-segment critical" id="riskBarCritical" style="width: 0%" title="Critical Risk"></div>
+          <div class="risk-segment high" id="riskBarHigh" style="width: 0%" title="High Risk"></div>
+          <div class="risk-segment medium" id="riskBarMedium" style="width: 0%" title="Medium Risk"></div>
+          <div class="risk-segment low" id="riskBarLow" style="width: 0%" title="Low / Info"></div>
+          <div class="risk-segment fp" id="riskBarFp" style="width: 0%" title="False Positives"></div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Interactive Stats KPI Grid -->
+    <div class="stats-grid">
+      <div class="stat-card critical" id="statCardCritical" onclick="selectSeverity('CRITICAL')" title="Click to filter by Critical Risk">
+        <div class="stat-info">
+          <div class="stat-value" id="countCritical">0</div>
+          <div class="stat-name">
+            Critical Risk
+          </div>
+          <div class="stat-percentage" id="pctCritical">0% of findings</div>
+        </div>
+        <div class="stat-badge-icon">🔥</div>
+      </div>
+
+      <div class="stat-card high" id="statCardHigh" onclick="selectSeverity('HIGH')" title="Click to filter by High Risk">
+        <div class="stat-info">
+          <div class="stat-value" id="countHigh">0</div>
+          <div class="stat-name">
+            High Risk
+          </div>
+          <div class="stat-percentage" id="pctHigh">0% of findings</div>
+        </div>
+        <div class="stat-badge-icon">⚠️</div>
+      </div>
+
+      <div class="stat-card medium" id="statCardMedium" onclick="selectSeverity('MEDIUM')" title="Click to filter by Medium Risk">
+        <div class="stat-info">
+          <div class="stat-value" id="countMedium">0</div>
+          <div class="stat-name">
+            Medium Risk
+          </div>
+          <div class="stat-percentage" id="pctMedium">0% of findings</div>
+        </div>
+        <div class="stat-badge-icon">🛡️</div>
+      </div>
+
+      <div class="stat-card low" id="statCardLow" onclick="selectSeverity('LOW')" title="Click to filter by Low / Info Risk">
+        <div class="stat-info">
+          <div class="stat-value" id="countLow">0</div>
+          <div class="stat-name">
+            Low / Info
+          </div>
+          <div class="stat-percentage" id="pctLow">0% of findings</div>
+        </div>
+        <div class="stat-badge-icon">ℹ️</div>
+      </div>
+    </div>
+
+    <!-- Segmented Navigation (Active vs False Positives) -->
+    <div class="view-tabs-container">
+      <div class="view-tabs">
+        <button class="view-tab active" id="tabActive" onclick="switchViewTab('active')">
+          <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+          Active Findings
+          <span class="tab-badge" id="tabActiveCount">0</span>
+        </button>
+
+        <button class="view-tab fp-tab" id="tabFalsePositive" onclick="switchViewTab('false_positive')">
+          <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+          </svg>
+          False Positives / Excluded
+          <span class="tab-badge" id="tabFpCount">0</span>
+        </button>
+      </div>
+
+      <div class="view-status-badge">
+        <span id="tabStatusSummary">Showing Active Findings</span>
+      </div>
+    </div>
+
+    <!-- Category Filter Bar -->
+    <div class="section-box">
+      <div class="section-title">
+        <span>Filter by Rule Category</span>
+        <button class="btn ghost" style="padding: 0.2rem 0.5rem; font-size: 0.74rem;" onclick="resetAllFilters()">Reset All Filters</button>
+      </div>
+      <div class="category-pills" id="categoryPills">
+        <div class="category-pill active" data-category="ALL">
+          All Categories <span class="count" id="pillTotalCount">0</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Search & Action Toolbar -->
+    <div class="controls-bar">
+      <div class="search-input-wrapper">
+        <svg class="search-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+        <input type="text" id="searchInput" class="search-input" placeholder="Search by file, rule name, category, secret, or line..." oninput="onSearchInput()" />
+        <button class="search-clear-btn" id="searchClearBtn" onclick="clearSearch()" title="Clear search">&times;</button>
+        <span class="search-kbd-badge" id="searchKbdBadge">/</span>
+      </div>
+
+      <div class="filter-actions">
+        <select id="severityFilter" class="custom-select" onchange="onSeverityChange()">
+          <option value="ALL">All Severities</option>
+          <option value="CRITICAL">🔥 Critical Risk</option>
+          <option value="HIGH">⚠️ High Risk</option>
+          <option value="MEDIUM">🛡️ Medium Risk</option>
+          <option value="LOW">ℹ️ Low / Info</option>
+        </select>
+
+        <select id="pageSizeSelect" class="custom-select" onchange="onPageSizeChange()">
+          <option value="25">25 per page</option>
+          <option value="50" selected>50 per page</option>
+          <option value="100">100 per page</option>
+          <option value="ALL">Show All</option>
+        </select>
+
+        <button class="btn" id="toggleExpandBtn" onclick="toggleAllExpandCollapse()" title="Toggle Expand / Collapse All (E)">
+          <svg id="expandCollapseIcon" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+          </svg>
+          <span id="expandCollapseText">Expand All</span>
+        </button>
+
+        <button class="btn" id="toggleMaskBtn" onclick="toggleGlobalMask()" title="Mask / Reveal secrets (M)">
+          <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+          </svg>
+          <span id="maskBtnText">Reveal</span>
+        </button>
+
+        <button class="btn" onclick="window.print()" title="Print or Export PDF Report">
+          <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+          </svg>
+          <span>Print</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Live Counter & Active Status Info -->
+    <div class="results-info-bar">
+      <div>
+        Showing <span class="results-count" id="resultsCount">0</span> findings
+        <span id="filterDescriptionText" style="color: var(--text-muted);"></span>
+      </div>
+      <div id="quickShortcutsInfo" style="font-size: 0.75rem; color: var(--text-muted);">
+        Shortcuts: <kbd>/</kbd> Search &bull; <kbd>E</kbd> Toggle Expand &bull; <kbd>M</kbd> Mask
+      </div>
+    </div>
+
+    <!-- Findings Container -->
+    <div id="findingsContainer">
+      <div class="empty-state">
+        <div class="empty-state-icon-box neutral">
+          <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+        </div>
+        <h2>No Audit Report Loaded</h2>
+        <p>Select a report from the dropdown above or click "Load Report" to inspect security findings.</p>
+        <button class="btn primary" onclick="document.getElementById('fileInput').click()">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+          </svg>
+          Select JSON File
+        </button>
+      </div>
+    </div>
+
+    <!-- Pagination Controls -->
+    <div class="pagination-bar" id="paginationBar" style="display: none;">
+      <div class="pagination-info" id="paginationInfo">Page 1 of 1</div>
+      <div class="pagination-buttons" id="paginationButtons"></div>
+    </div>
+
+    <!-- Enterprise Footer -->
+    <footer>
+      <div class="footer-brand">
+        <img src="ibm-logo.png" alt="IBM" style="height: 14px; opacity: 0.8;" />
+        <strong id="footerToolName">IBM SecretScanner Enterprise</strong> &bull; Security Audit &amp; Triage Console
+      </div>
+      <div style="font-size: 0.76rem; color: var(--text-muted);">
+        Enterprise Hardcoded Secrets Detection Engine &bull; Created by <strong>Manish Bansal</strong>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Drag & Drop Overlay -->
+  <div class="dropzone-overlay" id="dropzoneOverlay">
+    <div class="dropzone-content">
+      <svg class="dropzone-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+      </svg>
+      <h2 style="font-size: 1.4rem; margin-bottom: 0.5rem; font-weight: 800;">Drop JSON Scan Report</h2>
+      <p style="color: var(--text-secondary); font-size: 0.88rem;">Drop your report file to instantly view &amp; triage secrets in this workspace.</p>
+    </div>
+  </div>
+
+  <!-- Full File Viewer Modal Popup -->
+  <div class="file-modal-overlay" id="fileModalOverlay" onclick="closeFullFileModalOnBackdrop(event)">
+    <div class="file-modal-dialog">
+      <div class="file-modal-header">
+        <div class="file-modal-title-box">
+          <div class="file-modal-icon">
+            <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          </div>
+          <div>
+            <div class="file-modal-filename" id="fileModalFilename">filename.ext</div>
+            <div class="file-modal-filepath" id="fileModalFilepath" onclick="copyModalFilePath()" title="Click to copy full path">/path/to/file</div>
+          </div>
+        </div>
+
+        <div class="file-modal-actions">
+          <button class="btn" id="modalJumpBtn" onclick="jumpToTargetLine()" title="Scroll directly to finding line">
+            <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+            <span id="modalJumpText">Line 1</span>
+          </button>
+          <button class="btn" onclick="copyModalFileContent()" title="Copy entire file contents">
+            <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+            Copy File
+          </button>
+          <button class="btn btn-icon-only close-modal-btn" onclick="closeFullFileModal()" title="Close viewer (Esc)">
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="file-modal-toolbar">
+        <div class="file-modal-stats" id="fileModalStats">
+          Loading file...
+        </div>
+        <div class="file-modal-search-wrapper">
+          <input type="text" id="fileModalSearchInput" class="file-modal-search" placeholder="Filter lines in file..." oninput="onFileModalSearch()" />
+        </div>
+      </div>
+
+      <div class="file-modal-body" id="fileModalBody">
+        <div class="modal-loading-spinner">
+          <div class="spinner"></div>
+          <span>Loading source file from disk...</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script>
+    let currentReport = null;
+    let currentReportFilename = 'report.json';
+    let currentTab = 'active'; // 'active' | 'false_positive'
+    let currentCategory = 'ALL';
+    let currentSeverity = 'ALL';
+    let isMasked = true;
+    let isAllExpanded = false;
+    let reportsList = [];
+    
+    // Pagination state
+    let currentPage = 1;
+    let pageSize = 50; // 25, 50, 100, or 'ALL'
+
+    // Theme Management (Light by default)
+    function initTheme() {
+      const savedTheme = localStorage.getItem('secret_scanner_theme') || 'light';
+      applyTheme(savedTheme, false);
+    }
+
+    function applyTheme(theme, notify = true) {
+      if (theme === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      } else {
+        document.documentElement.removeAttribute('data-theme');
+      }
+      localStorage.setItem('secret_scanner_theme', theme);
+      
+      const btn = document.getElementById('themeToggleBtn');
+      if (btn) {
+        btn.innerHTML = theme === 'dark' 
+          ? `<svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>`
+          : `<svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>`;
+        btn.title = theme === 'dark' ? 'Switch to Light Theme' : 'Switch to Dark Theme';
+      }
+
+      if (notify) {
+        showToast(`Theme switched to ${theme}`);
+      }
+    }
+
+    function toggleTheme() {
+      const current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+      const next = current === 'dark' ? 'light' : 'dark';
+      applyTheme(next, true);
+    }
+
+    function escapeHtml(str) {
+      if (!str && str !== 0) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function formatBytes(bytes) {
+      if (!bytes || bytes === 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return (bytes / Math.pow(k, i)).toFixed(1) + ' ' + sizes[i];
+    }
+
+    function getStorageKey() {
+      const base = currentReportFilename || 'report';
+      return ('secret_scan_fp_' + base).replace(/[^a-zA-Z0-9_-]/g, '_');
+    }
+
+    function loadSavedFalsePositivesMap() {
+      try {
+        const raw = localStorage.getItem(getStorageKey());
+        if (!raw) return {};
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          const map = {};
+          parsed.forEach(id => { map[String(id)] = true; });
+          return map;
+        }
+        return parsed || {};
+      } catch (e) {
+        return {};
+      }
+    }
+
+    function saveFalsePositivesMap(fpMap) {
+      try {
+        localStorage.setItem(getStorageKey(), JSON.stringify(fpMap));
+      } catch (e) {}
+    }
+
+    // Switch View Tab (Active vs False Positives)
+    function switchViewTab(tab) {
+      currentTab = tab;
+      currentCategory = 'ALL';
+      currentPage = 1;
+      render();
+    }
+
+    // Toggle card details
+    function toggleDetails(id) {
+      const details = document.getElementById('details-' + id);
+      const chevron = document.getElementById('arrow-' + id);
+      if (!details) return;
+      
+      const isOpen = details.classList.contains('open');
+      if (isOpen) {
+        details.classList.remove('open');
+        if (chevron) chevron.style.transform = 'rotate(-90deg)';
+      } else {
+        details.classList.add('open');
+        if (chevron) chevron.style.transform = 'rotate(0deg)';
+      }
+    }
+
+    function toggleAllExpandCollapse() {
+      isAllExpanded = !isAllExpanded;
+      const btnText = document.getElementById('expandCollapseText');
+      const btnIcon = document.getElementById('expandCollapseIcon');
+      const btn = document.getElementById('toggleExpandBtn');
+      
+      if (isAllExpanded) {
+        document.querySelectorAll('.finding-details').forEach(details => {
+          details.classList.add('open');
+        });
+        document.querySelectorAll('.chevron-icon').forEach(chevron => {
+          chevron.style.transform = 'rotate(0deg)';
+        });
+        if (btnText) btnText.textContent = 'Collapse All';
+        if (btnIcon) {
+          btnIcon.innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 4v4m0 0H5m4 0L4 3m11 5h4m-4 0V4m0 4l5-5M9 20v-4m0 0H5m4 0l-5 5m11-5h4m-4 0v4m0-4l5 5" />`;
+        }
+        if (btn) btn.title = 'Collapse all findings (E)';
+        showToast('Expanded visible findings');
+      } else {
+        document.querySelectorAll('.finding-details').forEach(details => {
+          details.classList.remove('open');
+        });
+        document.querySelectorAll('.chevron-icon').forEach(chevron => {
+          chevron.style.transform = 'rotate(-90deg)';
+        });
+        if (btnText) btnText.textContent = 'Expand All';
+        if (btnIcon) {
+          btnIcon.innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />`;
+        }
+        if (btn) btn.title = 'Expand all findings (E)';
+        showToast('Collapsed visible findings');
+      }
+    }
+
+    function expandAllFindings() {
+      if (!isAllExpanded) toggleAllExpandCollapse();
+    }
+
+    function collapseAllFindings() {
+      if (isAllExpanded) toggleAllExpandCollapse();
+    }
+
+    function selectCategory(cat) {
+      if (currentCategory === cat && cat !== 'ALL') {
+        currentCategory = 'ALL';
+      } else {
+        currentCategory = cat;
+      }
+      currentPage = 1;
+      render();
+    }
+
+    function selectSeverity(sev) {
+      const select = document.getElementById('severityFilter');
+      if (currentSeverity === sev && sev !== 'ALL') {
+        currentSeverity = 'ALL';
+      } else {
+        currentSeverity = sev;
+      }
+      if (select) select.value = currentSeverity;
+      currentPage = 1;
+      render();
+    }
+
+    function onSeverityChange() {
+      const select = document.getElementById('severityFilter');
+      if (select) {
+        currentSeverity = select.value;
+      }
+      currentPage = 1;
+      render();
+    }
+
+    function onPageSizeChange() {
+      const select = document.getElementById('pageSizeSelect');
+      if (select) {
+        pageSize = select.value === 'ALL' ? 'ALL' : parseInt(select.value, 10);
+      }
+      currentPage = 1;
+      render();
+    }
+
+    function goToPage(page) {
+      currentPage = page;
+      render();
+      window.scrollTo({ top: 400, behavior: 'smooth' });
+    }
+
+    function resetAllFilters() {
+      currentCategory = 'ALL';
+      currentSeverity = 'ALL';
+      const searchInput = document.getElementById('searchInput');
+      if (searchInput) searchInput.value = '';
+      const severityFilter = document.getElementById('severityFilter');
+      if (severityFilter) severityFilter.value = 'ALL';
+      const searchClearBtn = document.getElementById('searchClearBtn');
+      if (searchClearBtn) searchClearBtn.style.display = 'none';
+      const searchKbdBadge = document.getElementById('searchKbdBadge');
+      if (searchKbdBadge) searchKbdBadge.style.display = 'block';
+      currentPage = 1;
+      render();
+      showToast('Reset all filters');
+    }
+
+    function onSearchInput() {
+      const input = document.getElementById('searchInput');
+      const clearBtn = document.getElementById('searchClearBtn');
+      const kbdBadge = document.getElementById('searchKbdBadge');
+      if (input && clearBtn && kbdBadge) {
+        if (input.value) {
+          clearBtn.style.display = 'block';
+          kbdBadge.style.display = 'none';
+        } else {
+          clearBtn.style.display = 'none';
+          kbdBadge.style.display = 'block';
+        }
+      }
+      currentPage = 1;
+      render();
+    }
+
+    function clearSearch() {
+      const input = document.getElementById('searchInput');
+      if (input) {
+        input.value = '';
+        input.focus();
+      }
+      onSearchInput();
+    }
+
+    function copyTargetText() {
+      const targetEl = document.getElementById('metaTarget');
+      if (targetEl && targetEl.textContent && targetEl.textContent !== '-') {
+        copyToClipboard(targetEl.textContent);
+      }
+    }
+
+    // Full File Modal State & Functions
+    let modalCurrentFilePath = '';
+    let modalCurrentLine = 1;
+    let modalCurrentContent = '';
+    let modalFindingSecret = '';
+
+    function openFullFileModalForFinding(findingId, event) {
+      if (event) {
+        event.stopPropagation();
+        event.preventDefault();
+      }
+
+      const finding = currentReport && currentReport.findings
+        ? currentReport.findings.find(f => String(f.id) === String(findingId))
+        : null;
+
+      if (!finding) return;
+
+      const targetPath = finding.absolutePath || finding.file;
+      const targetLine = finding.line || 1;
+      const rawSecret = finding.rawSecret || '';
+      const scanTarget = (currentReport && (currentReport.scan ? currentReport.scan.target : currentReport.target)) || '';
+
+      openFullFileModal(targetPath, targetLine, rawSecret, scanTarget);
+    }
+
+    async function openFullFileModal(filePath, targetLine = 1, secretText = '', scanTarget = '') {
+      modalCurrentFilePath = filePath;
+      modalCurrentLine = parseInt(targetLine, 10) || 1;
+      modalFindingSecret = secretText || '';
+
+      const overlay = document.getElementById('fileModalOverlay');
+      const filenameEl = document.getElementById('fileModalFilename');
+      const filepathEl = document.getElementById('fileModalFilepath');
+      const jumpText = document.getElementById('modalJumpText');
+      const bodyEl = document.getElementById('fileModalBody');
+      const statsEl = document.getElementById('fileModalStats');
+      const searchInput = document.getElementById('fileModalSearchInput');
+
+      if (searchInput) searchInput.value = '';
+      if (filenameEl) filenameEl.textContent = filePath.split('/').pop() || filePath;
+      if (filepathEl) filepathEl.textContent = filePath;
+      if (jumpText) jumpText.textContent = `Line ${modalCurrentLine}`;
+      if (statsEl) statsEl.textContent = `Fetching file from disk...`;
+
+      if (bodyEl) {
+        bodyEl.innerHTML = `
+          <div class="modal-loading-spinner">
+            <div class="spinner"></div>
+            <span>Loading source file from disk...</span>
+          </div>
+        `;
+      }
+
+      if (overlay) overlay.classList.add('open');
+
+      try {
+        const queryUrl = `/api/file-content?path=${encodeURIComponent(filePath)}&target=${encodeURIComponent(scanTarget || '')}`;
+        const res = await fetch(queryUrl);
+
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}: Failed to read file`);
+        }
+
+        const data = await res.json();
+        modalCurrentContent = data.content || '';
+        renderModalFileContent(modalCurrentContent, modalCurrentLine, modalFindingSecret);
+        if (statsEl) {
+          statsEl.innerHTML = `${data.totalLines.toLocaleString()} lines &bull; ${formatBytes(data.sizeBytes)} &bull; Finding on <strong style="color: var(--critical-color);">Line ${modalCurrentLine}</strong>`;
+        }
+
+        setTimeout(() => {
+          jumpToTargetLine();
+        }, 120);
+
+      } catch (err) {
+        console.warn('Failed to load file via API:', err);
+        const finding = currentReport && currentReport.findings 
+          ? currentReport.findings.find(f => (f.absolutePath === filePath || f.file === filePath) && f.line == targetLine)
+          : null;
+
+        if (finding && finding.context && finding.context.length > 0) {
+          modalCurrentContent = finding.context.map(c => c.text).join('\n');
+          bodyEl.innerHTML = `
+            <div style="padding: 0.85rem 1.4rem; background: var(--medium-bg); color: var(--medium-color); font-size: 0.82rem; border-bottom: 1px solid var(--medium-border); font-family: inherit;">
+              ⚠️ Could not access live file on disk (${escapeHtml(err.message)}). Displaying scan context excerpt below:
+            </div>
+            <div>
+              ${finding.context.map(c => `
+                <div class="modal-code-line ${c.isTarget ? 'target-finding-line' : ''}" id="modalLine-${c.line}">
+                  <span class="modal-line-num">${c.line}</span>
+                  <span class="modal-line-code">${escapeHtml(c.text)}</span>
+                </div>
+              `).join('')}
+            </div>
+          `;
+          if (statsEl) statsEl.textContent = `Showing scan context (${finding.context.length} lines)`;
+        } else {
+          bodyEl.innerHTML = `
+            <div class="modal-loading-spinner" style="color: var(--critical-color);">
+              <svg width="36" height="36" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <strong>Unable to read file: ${escapeHtml(filePath)}</strong>
+              <span style="font-size: 0.82rem; color: var(--text-secondary); max-width: 500px; font-family: inherit;">
+                ${escapeHtml(err.message)}. Ensure server is running with live file access.
+              </span>
+            </div>
+          `;
+          if (statsEl) statsEl.textContent = `File read error`;
+        }
+      }
+    }
+
+    function renderModalFileContent(content, targetLine, secretText = '', filterQuery = '') {
+      const bodyEl = document.getElementById('fileModalBody');
+      if (!bodyEl) return;
+
+      const lines = content.split(/\r?\n/);
+      const query = filterQuery ? filterQuery.toLowerCase() : '';
+
+      let html = '';
+      for (let i = 0; i < lines.length; i++) {
+        const lineNum = i + 1;
+        const lineText = lines[i];
+        const isTarget = lineNum === targetLine;
+        const matchesQuery = query && lineText.toLowerCase().includes(query);
+
+        if (query && !matchesQuery && !isTarget) {
+          continue;
+        }
+
+        let formattedText = escapeHtml(lineText);
+        if (isTarget && secretText && isMasked === false && lineText.includes(secretText)) {
+          const escapedSecret = escapeHtml(secretText);
+          formattedText = formattedText.replace(escapedSecret, `<span class="highlight-secret">${escapedSecret}</span>`);
+        }
+
+        html += `
+          <div class="modal-code-line ${isTarget ? 'target-finding-line' : ''} ${matchesQuery ? 'highlight-search-line' : ''}" id="modalLine-${lineNum}">
+            <span class="modal-line-num">${lineNum}</span>
+            <span class="modal-line-code">${formattedText || ' '}</span>
+          </div>
+        `;
+      }
+
+      bodyEl.innerHTML = html || `<div style="padding: 3rem; text-align: center; color: var(--text-muted); font-family: inherit;">No lines match filter "${escapeHtml(filterQuery)}"</div>`;
+    }
+
+    function jumpToTargetLine() {
+      const el = document.getElementById(`modalLine-${modalCurrentLine}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.style.transition = 'all 0.3s ease';
+        el.style.boxShadow = 'inset 0 0 12px var(--critical-glow)';
+        setTimeout(() => {
+          el.style.boxShadow = 'inset 0 0 8px var(--critical-glow)';
+        }, 1800);
+      }
+    }
+
+    function onFileModalSearch() {
+      const input = document.getElementById('fileModalSearchInput');
+      const query = input ? input.value : '';
+      renderModalFileContent(modalCurrentContent, modalCurrentLine, modalFindingSecret, query);
+    }
+
+    function copyModalFileContent() {
+      if (modalCurrentContent) {
+        copyToClipboard(modalCurrentContent);
+      }
+    }
+
+    function copyModalFilePath() {
+      if (modalCurrentFilePath) {
+        copyToClipboard(modalCurrentFilePath);
+      }
+    }
+
+    function closeFullFileModal() {
+      const overlay = document.getElementById('fileModalOverlay');
+      if (overlay) overlay.classList.remove('open');
+    }
+
+    function closeFullFileModalOnBackdrop(e) {
+      if (e.target.id === 'fileModalOverlay') {
+        closeFullFileModal();
+      }
+    }
+
+    // Toggle False Positive Status
+    function toggleFalsePositive(findingId, isFp, event) {
+      if (event) {
+        event.stopPropagation();
+        event.preventDefault();
+      }
+
+      if (!currentReport || !currentReport.findings) return;
+
+      const finding = currentReport.findings.find(f => String(f.id) === String(findingId));
+      if (!finding) return;
+
+      finding.isFalsePositive = !!isFp;
+
+      // Update localStorage
+      const fpMap = loadSavedFalsePositivesMap();
+      fpMap[String(findingId)] = !!isFp;
+      saveFalsePositivesMap(fpMap);
+
+      showToast(isFp 
+        ? `✓ Moved [${finding.id}] to False Positives` 
+        : `↺ Restored [${finding.id}] to Active Findings`
+      );
+
+      // Slide-out animation
+      const cardElement = document.querySelector(`.finding-card[data-id="${findingId}"]`);
+      if (cardElement) {
+        cardElement.classList.add(isFp ? 'sliding-out-right' : 'sliding-out-left');
+      }
+
+      // Persist to server if active
+      fetch('/api/toggle-fp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: currentReportFilename,
+          findingId: String(findingId),
+          isFalsePositive: !!isFp
+        })
+      }).catch(() => {});
+
+      setTimeout(() => {
+        render();
+      }, 250);
+    }
+
+    // Global Mask Toggle
+    function toggleGlobalMask() {
+      isMasked = !isMasked;
+      const maskBtnText = document.getElementById('maskBtnText');
+      if (maskBtnText) {
+        maskBtnText.textContent = isMasked ? 'Reveal' : 'Mask';
+      }
+      
+      document.querySelectorAll('.secret-code-token').forEach(el => {
+        el.textContent = isMasked ? el.getAttribute('data-masked') : el.getAttribute('data-raw');
+      });
+      showToast(isMasked ? 'Masked all secrets' : 'Revealed all secrets');
+    }
+
+    function toggleSingleSecretMask(findingId, event) {
+      if (event) {
+        event.stopPropagation();
+        event.preventDefault();
+      }
+      const tokenEl = document.querySelector(`.secret-code-token[data-id="${findingId}"]`);
+      if (!tokenEl) return;
+      const currentlyMasked = tokenEl.getAttribute('data-is-masked') !== 'false';
+      if (currentlyMasked) {
+        tokenEl.textContent = tokenEl.getAttribute('data-raw');
+        tokenEl.setAttribute('data-is-masked', 'false');
+      } else {
+        tokenEl.textContent = tokenEl.getAttribute('data-masked');
+        tokenEl.setAttribute('data-is-masked', 'true');
+      }
+    }
+
+    function copyFindingSecret(findingId, event) {
+      if (event) {
+        event.stopPropagation();
+        event.preventDefault();
+      }
+      if (!currentReport || !currentReport.findings) return;
+      const finding = currentReport.findings.find(f => String(f.id) === String(findingId));
+      if (finding && finding.rawSecret) {
+        copyToClipboard(finding.rawSecret);
+      }
+    }
+
+    function copyFilePath(filePath, line, event) {
+      if (event) {
+        event.stopPropagation();
+        event.preventDefault();
+      }
+      const text = line ? `${filePath}:${line}` : filePath;
+      copyToClipboard(text);
+    }
+
+    function copyToClipboard(text) {
+      if (!text) return;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+          showToast('✓ Copied to clipboard');
+        }).catch(() => {
+          fallbackCopy(text);
+        });
+      } else {
+        fallbackCopy(text);
+      }
+    }
+
+    function fallbackCopy(text) {
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      textArea.style.top = '-999999px';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        showToast('✓ Copied to clipboard');
+      } catch (err) {
+        showToast('❌ Failed to copy');
+      }
+      textArea.remove();
+    }
+
+    function showToast(msg) {
+      const container = document.getElementById('toastContainer');
+      if (!container) return;
+      const toast = document.createElement('div');
+      toast.className = 'toast-message';
+      toast.innerHTML = `<span>${escapeHtml(msg)}</span>`;
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(10px)';
+        toast.style.transition = 'all 0.2s ease';
+        setTimeout(() => toast.remove(), 220);
+      }, 2600);
+    }
+
+    function triggerFileDownload(dataObj, filename) {
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(dataObj, null, 2));
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", filename);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+      showToast(`✓ Downloaded ${filename}`);
+    }
+
+    function exportUpdatedJson() {
+      if (!currentReport) return;
+
+      const allFindings = currentReport.findings || [];
+      const activeFindings = allFindings.filter(f => !f.isFalsePositive);
+      const fpFindings = allFindings.filter(f => !!f.isFalsePositive);
+
+      const updatedReport = JSON.parse(JSON.stringify(currentReport));
+      if (!updatedReport.scan) updatedReport.scan = {};
+      
+      updatedReport.scan.summary = {
+        critical: activeFindings.filter(f => f.severity === 'CRITICAL').length,
+        high: activeFindings.filter(f => f.severity === 'HIGH').length,
+        medium: activeFindings.filter(f => f.severity === 'MEDIUM').length,
+        low: activeFindings.filter(f => f.severity === 'LOW').length,
+        active: activeFindings.length,
+        falsePositives: fpFindings.length,
+        total: allFindings.length
+      };
+
+      const outName = currentReportFilename.endsWith('.json') ? currentReportFilename : `${currentReportFilename}.json`;
+
+      fetch('/api/save-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: currentReportFilename,
+          report: updatedReport
+        })
+      }).then(res => {
+        if (res.ok) {
+          showToast(`✓ Saved directly to disk: reports/${currentReportFilename}`);
+        } else {
+          triggerFileDownload(updatedReport, outName);
+        }
+      }).catch(() => {
+        triggerFileDownload(updatedReport, outName);
+      });
+    }
+
+    // Unified Render Function
+    function render() {
+      if (!currentReport) return;
+
+      const metadata = currentReport.metadata || {};
+      const scan = currentReport.scan || {};
+      const stats = scan.stats || currentReport.stats || {};
+      const allFindings = currentReport.findings || [];
+
+      // 1. Partition findings
+      const activeFindings = allFindings.filter(f => !f.isFalsePositive);
+      const fpFindings = allFindings.filter(f => !!f.isFalsePositive);
+
+      // 2. Update Top Metadata
+      document.getElementById('metaTarget').textContent = scan.target || currentReport.target || '-';
+      document.getElementById('metaTarget').title = scan.target || currentReport.target || '-';
+      document.getElementById('metaFiles').textContent = (stats.filesScanned || 0).toLocaleString() + ' files';
+      
+      const rawTimestamp = scan.formattedDate || scan.timestamp || currentReport.timestamp;
+      const displayDate = rawTimestamp ? new Date(rawTimestamp).toLocaleString() : 'N/A';
+      document.getElementById('metaTimestamp').textContent = displayDate;
+      
+      const durationSec = stats.durationSeconds !== undefined ? `${stats.durationSeconds}s` : '-';
+      const sizeStr = stats.bytesScanned ? formatBytes(stats.bytesScanned) : '';
+      document.getElementById('metaStats').textContent = `${durationSec} ${sizeStr ? '(' + sizeStr + ')' : ''}`;
+
+      if (metadata.name) {
+        document.getElementById('footerToolName').textContent = `${metadata.name} ${metadata.version ? 'v' + metadata.version : ''}`;
+      }
+
+      // 3. Tab partitioning
+      const tabItems = (currentTab === 'false_positive') ? fpFindings : activeFindings;
+
+      // 4. Update Severity Counters & Percentages
+      const cCount = tabItems.filter(f => f.severity === 'CRITICAL').length;
+      const hCount = tabItems.filter(f => f.severity === 'HIGH').length;
+      const mCount = tabItems.filter(f => f.severity === 'MEDIUM').length;
+      const lCount = tabItems.filter(f => f.severity === 'LOW').length;
+      const tCount = tabItems.length;
+
+      document.getElementById('countCritical').textContent = cCount;
+      document.getElementById('countHigh').textContent = hCount;
+      document.getElementById('countMedium').textContent = mCount;
+      document.getElementById('countLow').textContent = lCount;
+
+      document.getElementById('pctCritical').textContent = tCount ? `${Math.round((cCount / tCount) * 100)}% of tab` : '0%';
+      document.getElementById('pctHigh').textContent = tCount ? `${Math.round((hCount / tCount) * 100)}% of tab` : '0%';
+      document.getElementById('pctMedium').textContent = tCount ? `${Math.round((mCount / tCount) * 100)}% of tab` : '0%';
+      document.getElementById('pctLow').textContent = tCount ? `${Math.round((lCount / tCount) * 100)}% of tab` : '0%';
+
+      // 5. Update Risk Breakdown Meter
+      const totalAll = allFindings.length || 1;
+      const criticalPct = ((activeFindings.filter(f => f.severity === 'CRITICAL').length / totalAll) * 100).toFixed(1);
+      const highPct = ((activeFindings.filter(f => f.severity === 'HIGH').length / totalAll) * 100).toFixed(1);
+      const mediumPct = ((activeFindings.filter(f => f.severity === 'MEDIUM').length / totalAll) * 100).toFixed(1);
+      const lowPct = ((activeFindings.filter(f => f.severity === 'LOW').length / totalAll) * 100).toFixed(1);
+      const fpPct = ((fpFindings.length / totalAll) * 100).toFixed(1);
+
+      document.getElementById('riskBarCritical').style.width = criticalPct + '%';
+      document.getElementById('riskBarHigh').style.width = highPct + '%';
+      document.getElementById('riskBarMedium').style.width = mediumPct + '%';
+      document.getElementById('riskBarLow').style.width = lowPct + '%';
+      document.getElementById('riskBarFp').style.width = fpPct + '%';
+      document.getElementById('riskDistributionSummary').textContent = `${activeFindings.length} Active Findings &bull; ${fpFindings.length} False Positives (${allFindings.length} total)`;
+
+      // 6. Update Tab Buttons & Counts
+      const tabActive = document.getElementById('tabActive');
+      const tabFp = document.getElementById('tabFalsePositive');
+      const statusSummary = document.getElementById('tabStatusSummary');
+
+      document.getElementById('tabActiveCount').textContent = activeFindings.length;
+      document.getElementById('tabFpCount').textContent = fpFindings.length;
+
+      if (currentTab === 'false_positive') {
+        tabActive.classList.remove('active');
+        tabFp.classList.add('active');
+        if (statusSummary) statusSummary.textContent = `Showing ONLY False Positives (${fpFindings.length})`;
+      } else {
+        tabActive.classList.add('active');
+        tabFp.classList.remove('active');
+        if (statusSummary) statusSummary.textContent = `Showing Active Findings (${activeFindings.length})`;
+      }
+
+      // 7. Update Category Pills
+      const categoriesMap = {};
+      tabItems.forEach(f => {
+        const cat = f.category || 'General';
+        categoriesMap[cat] = (categoriesMap[cat] || 0) + 1;
+      });
+
+      if (currentCategory !== 'ALL' && !categoriesMap[currentCategory]) {
+        currentCategory = 'ALL';
+      }
+
+      const categoryEntries = Object.entries(categoriesMap).sort((a, b) => b[1] - a[1]);
+      const categoryPillsContainer = document.getElementById('categoryPills');
+      const activePillClass = (currentTab === 'false_positive') ? 'active-fp' : 'active';
+      
+      categoryPillsContainer.innerHTML = `
+        <div class="category-pill ${currentCategory === 'ALL' ? activePillClass : ''}" data-category="ALL">
+          All Categories <span class="count">${tabItems.length}</span>
+        </div>
+        ${categoryEntries.map(([cat, count]) => `
+          <div class="category-pill ${currentCategory === cat ? activePillClass : ''}" data-category="${escapeHtml(cat)}">
+            ${escapeHtml(cat)} <span class="count">${count}</span>
+          </div>
+        `).join('')}
+      `;
+
+      // 8. Apply Filters
+      const searchInput = document.getElementById('searchInput');
+      const severityFilter = document.getElementById('severityFilter');
+      const query = (searchInput ? searchInput.value : '').trim().toLowerCase();
+      const severity = currentSeverity || (severityFilter ? severityFilter.value : 'ALL');
+
+      if (severityFilter && severityFilter.value !== severity) {
+        severityFilter.value = severity;
+      }
+
+      // Highlight active stat card
+      ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'].forEach(s => {
+        const card = document.getElementById(`statCard${s.charAt(0) + s.slice(1).toLowerCase()}`);
+        if (card) {
+          if (severity === s) {
+            card.classList.add('active-filter');
+          } else {
+            card.classList.remove('active-filter');
+          }
+        }
+      });
+
+      const filteredList = tabItems.filter(f => {
+        const fCat = f.category || 'General';
+        const matchesCategory = currentCategory === 'ALL' || fCat === currentCategory;
+        const matchesSeverity = severity === 'ALL' || f.severity === severity;
+        const matchesQuery = !query || 
+          (f.file && f.file.toLowerCase().includes(query)) ||
+          (f.ruleName && f.ruleName.toLowerCase().includes(query)) ||
+          (f.ruleId && f.ruleId.toLowerCase().includes(query)) ||
+          (fCat && fCat.toLowerCase().includes(query)) ||
+          (f.description && f.description.toLowerCase().includes(query)) ||
+          (f.rawSecret && f.rawSecret.toLowerCase().includes(query));
+
+        return matchesCategory && matchesSeverity && matchesQuery;
+      });
+
+      // Update Results Counter
+      document.getElementById('resultsCount').textContent = filteredList.length;
+      let filterDesc = '';
+      if (currentSeverity !== 'ALL') filterDesc += ` &bull; Severity: ${currentSeverity}`;
+      if (currentCategory !== 'ALL') filterDesc += ` &bull; Category: ${currentCategory}`;
+      if (query) filterDesc += ` &bull; Search: "${query}"`;
+      document.getElementById('filterDescriptionText').innerHTML = filterDesc;
+
+      // 9. Pagination Slicing
+      const totalFiltered = filteredList.length;
+      let paginatedList = filteredList;
+      const paginationBar = document.getElementById('paginationBar');
+
+      if (pageSize !== 'ALL' && totalFiltered > pageSize) {
+        const totalPages = Math.ceil(totalFiltered / pageSize);
+        if (currentPage > totalPages) currentPage = totalPages;
+        if (currentPage < 1) currentPage = 1;
+
+        const startIdx = (currentPage - 1) * pageSize;
+        const endIdx = startIdx + pageSize;
+        paginatedList = filteredList.slice(startIdx, endIdx);
+
+        paginationBar.style.display = 'flex';
+        document.getElementById('paginationInfo').textContent = `Showing ${startIdx + 1}–${Math.min(endIdx, totalFiltered)} of ${totalFiltered} findings (Page ${currentPage} of ${totalPages})`;
+
+        // Build pagination buttons
+        let buttonsHtml = `
+          <button class="page-btn" onclick="goToPage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''} title="Previous Page">&laquo;</button>
+        `;
+
+        const maxButtons = 5;
+        let startPage = Math.max(1, currentPage - 2);
+        let endPage = Math.min(totalPages, startPage + maxButtons - 1);
+        if (endPage - startPage < maxButtons - 1) {
+          startPage = Math.max(1, endPage - maxButtons + 1);
+        }
+
+        for (let p = startPage; p <= endPage; p++) {
+          buttonsHtml += `
+            <button class="page-btn ${p === currentPage ? 'active' : ''}" onclick="goToPage(${p})">${p}</button>
+          `;
+        }
+
+        buttonsHtml += `
+          <button class="page-btn" onclick="goToPage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''} title="Next Page">&raquo;</button>
+        `;
+
+        document.getElementById('paginationButtons').innerHTML = buttonsHtml;
+      } else {
+        paginationBar.style.display = 'none';
+      }
+
+      // 10. Render Finding Cards
+      const container = document.getElementById('findingsContainer');
+
+      if (tabItems.length === 0) {
+        if (currentTab === 'false_positive') {
+          container.innerHTML = `
+            <div class="empty-state">
+              <div class="empty-state-icon-box" style="background: var(--fp-bg); border-color: var(--fp-border); color: var(--fp-color);">
+                <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <h2>No False Positives Flagged</h2>
+              <p>Click "False Positive" on any finding in the Active tab to move it to the exclusion list.</p>
+            </div>
+          `;
+        } else {
+          container.innerHTML = `
+            <div class="empty-state">
+              <div class="empty-state-icon-box">
+                <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <h2>Zero Active Secrets Detected!</h2>
+              <p>All scanned code is clear of active credentials or findings have been triaged as false positives.</p>
+            </div>
+          `;
+        }
+        return;
+      }
+
+      if (filteredList.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon-box warning">
+              <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </div>
+            <h2>No Matching Findings Found</h2>
+            <p>No findings match your current filters. Try changing your search query or severity filter.</p>
+            <button class="btn" onclick="resetAllFilters()">Reset All Filters</button>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = paginatedList.map((f, idx) => {
+        const findingId = f.id || `SEC-${idx + 1}`;
+        const isFp = !!f.isFalsePositive;
+        const severity = f.severity || 'LOW';
+        const ruleName = f.ruleName || f.ruleId || 'Security Finding';
+        const category = f.category || 'General';
+        const file = f.file || 'unknown';
+        const line = f.line || 1;
+        const masked = f.maskedSecret || '********';
+        const raw = f.rawSecret || '';
+        const desc = f.description || '';
+        const remediation = f.remediation || 'Remove hardcoded credentials and store securely in environment variables, Key Protect, or a Secrets Manager.';
+        const context = f.context || [];
+
+        let sevIcon = 'ℹ️';
+        if (severity === 'CRITICAL') sevIcon = '🔥';
+        else if (severity === 'HIGH') sevIcon = '⚠️';
+        else if (severity === 'MEDIUM') sevIcon = '🛡️';
+
+        return `
+          <div class="finding-card severity-${severity} ${isFp ? 'is-fp' : ''}" data-id="${escapeHtml(findingId)}">
+            <div class="finding-header" onclick="toggleDetails('${escapeHtml(findingId)}')">
+              <div class="finding-header-top">
+                <div class="finding-main-info">
+                  <span class="severity-badge ${severity}">
+                    <span>${sevIcon}</span> ${severity}
+                  </span>
+                  <span class="finding-title">${escapeHtml(ruleName)}</span>
+                  <span class="finding-id-pill">[${escapeHtml(findingId)}]</span>
+                  <span class="finding-category-tag">${escapeHtml(category)}</span>
+                  ${isFp ? '<span class="fp-badge-tag"><svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg> False Positive</span>' : ''}
+                </div>
+
+                <div class="finding-actions">
+                  ${!isFp ? `
+                    <button class="fp-action-btn mark-fp" onclick="toggleFalsePositive('${escapeHtml(findingId)}', true, event)" title="Mark as false positive">
+                      <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                      </svg>
+                      False Positive
+                    </button>
+                  ` : `
+                    <button class="fp-action-btn revert-fp" onclick="toggleFalsePositive('${escapeHtml(findingId)}', false, event)" title="Revert back to active findings">
+                      <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      Revert Active
+                    </button>
+                  `}
+
+                  <svg class="chevron-icon" id="arrow-${escapeHtml(findingId)}" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+              </div>
+
+              <div class="finding-header-sub">
+                <span class="finding-file-pill" onclick="copyFilePath('${escapeHtml(file)}', ${line}, event)" title="Click to copy: ${escapeHtml(file)}:${line}">
+                  <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                  </svg>
+                  <span class="file-path-text">${escapeHtml(file)}</span>
+                  <span class="file-line-badge">Line ${line}</span>
+                </span>
+
+                <button class="fp-action-btn" onclick="openFullFileModalForFinding('${escapeHtml(findingId)}', event)" title="Open full source file in popup">
+                  <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                  Show Full File
+                </button>
+              </div>
+            </div>
+
+            <div class="finding-details" id="details-${escapeHtml(findingId)}">
+              <div class="finding-desc-card">
+                <strong>Finding Details:</strong> ${escapeHtml(desc)}
+              </div>
+
+              ${context.length > 0 ? `
+                <div class="code-window">
+                  <div class="code-window-header">
+                    <div class="code-window-title">
+                      <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
+                      <span>${escapeHtml(file)} (Line ${line})</span>
+                    </div>
+                    <div style="display: flex; gap: 0.45rem; align-items: center;">
+                      <button class="btn primary" style="padding: 0.2rem 0.6rem; font-size: 0.72rem;" onclick="openFullFileModalForFinding('${escapeHtml(findingId)}', event)" title="Open full source file in popup">
+                        <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                        Show Full File
+                      </button>
+                      <button class="btn ghost" style="padding: 0.2rem 0.45rem; font-size: 0.7rem;" onclick="copyFilePath('${escapeHtml(file)}', ${line}, event)">Copy Location</button>
+                    </div>
+                  </div>
+                  <div class="code-container">
+                    ${context.map(c => `
+                      <div class="code-line ${c.isTarget ? 'target-line' : ''}">
+                        <span class="code-line-num">${c.line}</span>
+                        <span class="code-line-text">${escapeHtml(c.text)}</span>
+                      </div>
+                    `).join('')}
+                  </div>
+                </div>
+              ` : ''}
+
+              <div class="secret-row">
+                <div class="secret-preview-box">
+                  <span style="font-weight: 600; color: var(--text-muted);">Secret Value:</span>
+                  <code class="secret-code-token" data-id="${escapeHtml(findingId)}" data-masked="${escapeHtml(masked)}" data-raw="${escapeHtml(raw)}" data-is-masked="true">${escapeHtml(isMasked ? masked : raw)}</code>
+                </div>
+                <div class="secret-actions-group">
+                  <button class="btn" style="padding: 0.3rem 0.65rem; font-size: 0.76rem;" onclick="toggleSingleSecretMask('${escapeHtml(findingId)}', event)" title="Toggle mask for this secret">
+                    <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                    Toggle
+                  </button>
+                  <button class="btn" style="padding: 0.3rem 0.65rem; font-size: 0.76rem;" onclick="copyFindingSecret('${escapeHtml(findingId)}', event)" title="Copy raw secret to clipboard">
+                    <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    Copy Secret
+                  </button>
+                </div>
+              </div>
+
+              <div class="remediation-box">
+                <svg class="remediation-icon" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div>
+                  <div class="remediation-title">Recommended Remediation</div>
+                  <div class="remediation-body">${escapeHtml(remediation)}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      if (isAllExpanded) {
+        document.querySelectorAll('.finding-details').forEach(details => {
+          details.classList.add('open');
+        });
+        document.querySelectorAll('.chevron-icon').forEach(chevron => {
+          chevron.style.transform = 'rotate(0deg)';
+        });
+      }
+    }
+
+    // Render Full Report Data on Initial Load
+    function renderReport(data, filename) {
+      currentReport = data;
+      if (filename) currentReportFilename = filename;
+      if (!data) return;
+
+      const fpMap = loadSavedFalsePositivesMap();
+      const findings = data.findings || [];
+      findings.forEach((f, idx) => {
+        if (!f.id) f.id = `SEC-${idx + 1}`;
+        const strId = String(f.id);
+        if (fpMap[strId] !== undefined) {
+          f.isFalsePositive = !!fpMap[strId];
+        } else {
+          f.isFalsePositive = (f.isFalsePositive === true);
+        }
+      });
+
+      currentPage = 1;
+      render();
+    }
+
+    // Load Report from Path
+    async function loadReportFromPath(path) {
+      try {
+        currentReportFilename = path.split('/').pop();
+        const response = await fetch(path);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        renderReport(data, currentReportFilename);
+      } catch (err) {
+        console.warn('Direct fetch failed:', err);
+        const container = document.getElementById('findingsContainer');
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon-box warning">
+              <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+            <h2>Could not automatically load ${escapeHtml(path)}</h2>
+            <p>If opening via <code>file://</code> protocol, browser security policy may restrict automatic background file loading. Click below to load your scan JSON report directly:</p>
+            <button class="btn primary" onclick="document.getElementById('fileInput').click()">
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+              Choose ${escapeHtml(path.split('/').pop())}
+            </button>
+          </div>
+        `;
+      }
+    }
+
+    function onReportSelectChange() {
+      const select = document.getElementById('reportSelect');
+      const selectedPath = select.value;
+      if (selectedPath) {
+        loadReportFromPath(selectedPath);
+      }
+    }
+
+    // Fetch reports index
+    async function fetchReportsIndex() {
+      const select = document.getElementById('reportSelect');
+      select.innerHTML = '<option value="" disabled selected>Searching for reports...</option>';
+
+      const candidatePaths = [
+        'reports/reports.json',
+        './reports/reports.json',
+        'reports.json',
+        '../reports/reports.json'
+      ];
+
+      let foundList = null;
+
+      for (const p of candidatePaths) {
+        try {
+          const res = await fetch(p);
+          if (res.ok) {
+            foundList = await res.json();
+            break;
+          }
+        } catch (e) {}
+      }
+
+      if (foundList && Array.isArray(foundList) && foundList.length > 0) {
+        reportsList = foundList;
+        select.innerHTML = '';
+        foundList.forEach((r, idx) => {
+          const opt = document.createElement('option');
+          const relPath = r.filename.startsWith('reports/') ? r.filename : `reports/${r.filename}`;
+          opt.value = relPath;
+          const countStr = r.total !== undefined ? ` (${r.total} secrets)` : '';
+          opt.textContent = `${r.filename}${countStr}`;
+          if (idx === 0) opt.selected = true;
+          select.appendChild(opt);
+        });
+
+        const firstReportPath = select.value;
+        loadReportFromPath(firstReportPath);
+      } else {
+        select.innerHTML = `
+          <option value="" disabled selected>No reports index found</option>
+        `;
+      }
+    }
+
+    // File Upload Handler
+    function handleFileUpload(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      currentReportFilename = file.name;
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        try {
+          const parsed = JSON.parse(event.target.result);
+          renderReport(parsed, file.name);
+
+          const select = document.getElementById('reportSelect');
+          const opt = document.createElement('option');
+          opt.value = file.name;
+          opt.textContent = `📁 ${file.name} (Loaded)`;
+          opt.selected = true;
+          select.insertBefore(opt, select.firstChild);
+          showToast(`✓ Loaded ${file.name}`);
+        } catch (err) {
+          alert('Error parsing JSON report: ' + err.message);
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    // Global Event Listeners & Shortcuts
+    document.addEventListener('DOMContentLoaded', () => {
+      // Initialize Theme
+      initTheme();
+
+      // Category delegation
+      const categoryPillsContainer = document.getElementById('categoryPills');
+      if (categoryPillsContainer) {
+        categoryPillsContainer.addEventListener('click', (e) => {
+          const pill = e.target.closest('.category-pill');
+          if (!pill) return;
+          const cat = pill.getAttribute('data-category');
+          if (cat !== null) {
+            selectCategory(cat);
+          }
+        });
+      }
+
+      // Keyboard shortcuts
+      document.addEventListener('keydown', (e) => {
+        // Modal check for Esc key
+        const fileModal = document.getElementById('fileModalOverlay');
+        if (fileModal && fileModal.classList.contains('open')) {
+          if (e.key === 'Escape') {
+            closeFullFileModal();
+            return;
+          }
+        }
+
+        // Ignore if user is inside an input or textarea
+        if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) {
+          if (e.key === 'Escape') {
+            document.activeElement.blur();
+          }
+          return;
+        }
+
+        if (e.key === '/' || (e.ctrlKey && e.key === 'k') || (e.metaKey && e.key === 'k')) {
+          e.preventDefault();
+          const searchInput = document.getElementById('searchInput');
+          if (searchInput) {
+            searchInput.focus();
+            searchInput.select();
+          }
+        } else if (e.key.toLowerCase() === 'e' || e.key.toLowerCase() === 'c') {
+          toggleAllExpandCollapse();
+        } else if (e.key.toLowerCase() === 'm') {
+          toggleGlobalMask();
+        }
+      });
+
+      // Drag and drop overlay
+      window.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        document.getElementById('dropzoneOverlay').classList.add('active');
+      });
+
+      window.addEventListener('dragleave', (e) => {
+        if (e.relatedTarget === null) {
+          document.getElementById('dropzoneOverlay').classList.remove('active');
+        }
+      });
+
+      window.addEventListener('drop', (e) => {
+        e.preventDefault();
+        document.getElementById('dropzoneOverlay').classList.remove('active');
+
+        if (e.dataTransfer.files.length > 0) {
+          const file = e.dataTransfer.files[0];
+          currentReportFilename = file.name;
+          const reader = new FileReader();
+          reader.onload = function(event) {
+            try {
+              const parsed = JSON.parse(event.target.result);
+              renderReport(parsed, file.name);
+
+              const select = document.getElementById('reportSelect');
+              const opt = document.createElement('option');
+              opt.value = file.name;
+              opt.textContent = `📁 ${file.name} (Dropped)`;
+              opt.selected = true;
+              select.insertBefore(opt, select.firstChild);
+              showToast(`✓ Loaded ${file.name}`);
+            } catch (err) {
+              alert('Invalid JSON report file: ' + err.message);
+            }
+          };
+          reader.readAsText(file);
+        }
+      });
+
+      // URL parameters check
+      const urlParams = new URLSearchParams(window.location.search);
+      const reportParam = urlParams.get('report') || urlParams.get('file');
+
+      if (reportParam) {
+        loadReportFromPath(reportParam);
+      } else {
+        fetchReportsIndex();
+      }
+    });
+  </script>
+</body>
+</html>
