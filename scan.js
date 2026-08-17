@@ -226,6 +226,26 @@ const PATTERNS = [
     remediation: 'Pass runtime credential variables rather than hardcoded string parameters.',
     regex: /\b(?:set|with)(?:Password|Passcode|AccessCode|ClientSecret|SecretKey)\s*\([^)]*["'](?!(?:\$\{|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))[^"'\s]{3,}["']|\b(?:createCredentials|authenticate|login|getConnection)\s*\([^)]*["'](?!(?:\$\{|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))[^"'\s]{3,}["']/gi
   },
+  {
+    id: 'DICT_COLLECTION_SECRET_CALL',
+    name: 'Dictionary / Map / Collection Method or Subscript Call with Secret',
+    category: 'Passwords & Credentials',
+    severity: 'HIGH',
+    description: 'Matches dictionary/map methods and callable structures (dict.add("key", "val"), dict.put, dict.set, dict("key", "val"), dict["key", "val"]).',
+    remediation: 'Externalize credentials and avoid hardcoding plaintext secrets in collection builders.',
+    regex: /\b[a-zA-Z0-9_$]+(?:\.[a-zA-Z0-9_$]+)*(?:\s*\.\s*(?:add|put|set|insert|push|set_secret|add_secret|put_secret|append))?\s*[\(\[]\s*(["'`])(?:[a-zA-Z0-9_\s-]*(?:pass(?:word|wd)?|pwd|pass[._-]?phrase|pass[._-]?code|access[._-]?code|secret(?:[._-]?key)?|api[._-]?(?:key|token|secret)|client[._-]?(?:secret|key)|jwt(?:[._-]?(?:token|secret|key))?|token(?:[._-]?secret)?|auth[._-]?(?:key|token|secret)|encryption[._-]?(?:key|secret)|encrypted[._-]?(?:pass(?:word|wd)?|pwd|key|secret)|master[._-]?key|signing[._-]?key|private[._-]?key|access[._-]?(?:secret|token)|webhook[._-]?secret|session[._-]?secret|service[._-]?(?:key|secret)|db[._-]?(?:pass(?:word|wd)?|pwd)|user[._-]?(?:pass(?:word|wd)?|pwd)|admin[._-]?(?:pass(?:word|wd)?|pwd)|root[._-]?(?:pass(?:word|wd)?|pwd))[a-zA-Z0-9_\s-]*)\1\s*,\s*(["'`])(?!(?:\$\{|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|[^\r\n"']*(?:required|invalid|must\s+be|cannot\s+be|characters|match)|[\^~><=]|\d+(?:px|em|rem|%|vh|vw|pt)\b|\s*\2))([^\r\n\2]{3,})\2\s*[\)\]]/gi,
+    fileFilter: (filePath) => path.basename(filePath).toLowerCase() !== 'package.json'
+  },
+  {
+    id: 'DICT_SUBSCRIPT_ASSIGNMENT',
+    name: 'Dictionary / Map Subscript Index Secret Assignment',
+    category: 'Passwords & Credentials',
+    severity: 'HIGH',
+    description: 'Matches dictionary/map indexing assignments (dict["password"] = "secret", dict["encryptedKey"] = "val").',
+    remediation: 'Load secret values from environment variables or secure storage.',
+    regex: /\b[a-zA-Z0-9_$]+(?:\.[a-zA-Z0-9_$]+)*\s*\[\s*(["'`])(?:[a-zA-Z0-9_\s-]*(?:pass(?:word|wd)?|pwd|pass[._-]?phrase|pass[._-]?code|access[._-]?code|secret(?:[._-]?key)?|api[._-]?(?:key|token|secret)|client[._-]?(?:secret|key)|jwt(?:[._-]?(?:token|secret|key))?|token(?:[._-]?secret)?|auth[._-]?(?:key|token|secret)|encryption[._-]?(?:key|secret)|encrypted[._-]?(?:pass(?:word|wd)?|pwd|key|secret)|master[._-]?key|signing[._-]?key|private[._-]?key|access[._-]?(?:secret|token)|webhook[._-]?secret|session[._-]?secret|service[._-]?(?:key|secret)|db[._-]?(?:pass(?:word|wd)?|pwd)|user[._-]?(?:pass(?:word|wd)?|pwd)|admin[._-]?(?:pass(?:word|wd)?|pwd)|root[._-]?(?:pass(?:word|wd)?|pwd))[a-zA-Z0-9_\s-]*)\1\s*\]\s*=\s*(["'`])(?!(?:\$\{|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|[^\r\n"']*(?:required|invalid|must\s+be|cannot\s+be|characters|match)|[\^~><=]|\d+(?:px|em|rem|%|vh|vw|pt)\b|\s*\2))([^\r\n\2]{3,})\2/gi,
+    fileFilter: (filePath) => path.basename(filePath).toLowerCase() !== 'package.json'
+  },
 
   // --- Category: Cloud Providers, LLMs & Well-Known SaaS ---
   {
