@@ -277,7 +277,7 @@ const PATTERNS = [
     severity: 'HIGH',
     description: 'Matches strongly-typed variable declarations (String, const, let, final) holding passwords or secret keys in source code.',
     remediation: 'Remove the hardcoded literal and read from config or system properties.',
-    regex: /(?:String|final|const|let|var|val)\s+(?:[a-zA-Z0-9_$]*(?:pass(?:word|wd)?|pwd|pass[._-]?phrase|pass[._-]?code|access[._-]?code|db[._-]?(?:pass(?:word|wd)?|pwd)|user[._-]?(?:pass(?:word|wd)?|pwd)|admin[._-]?(?:pass(?:word|wd)?|pwd)|root[._-]?(?:pass(?:word|wd)?|pwd)|secret|token|api[._-]?key|auth|credential|key)[a-zA-Z0-9_$]*)\s*=\s*["'](?!(?:["'`]*\$|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))[^"'\s]{3,}["']/gi
+    regex: /(?:String|final|const|let|var|val)\s+(?:[a-zA-Z0-9_$]*(?:pass(?:word|wd)?|pwd|pass[._-]?phrase|pass[._-]?code|access[._-]?(?:code|token|key|secret)|db[._-]?(?:pass(?:word|wd)?|pwd)|user[._-]?(?:pass(?:word|wd)?|pwd)|admin[._-]?(?:pass(?:word|wd)?|pwd)|root[._-]?(?:pass(?:word|wd)?|pwd)|api[._-]?(?:key|token|secret)|auth[._-]?(?:token|secret|key)|client[._-]?(?:secret|key|token)|bearer[._-]?token|refresh[._-]?token|secret(?:[._-]?(?:key|token))?|token|key|private[._-]?key|signing[._-]?key|encryption[._-]?key|master[._-]?key|credential)[a-zA-Z0-9_$]*)\s*=\s*["'](?!(?:["'`]*\$|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))[^"'\s]{3,}["']/gi
   },
   {
     id: 'CREDENTIAL_SETTER_CALL',
@@ -435,9 +435,10 @@ const PATTERNS = [
     name: 'Generic Developer Secret / Token / API Key',
     category: 'Generic Developer Secrets',
     severity: 'HIGH',
+    entropy: 3.0,
     description: 'Matches variable/key assignments targeting secrets, API keys, JWT tokens, access tokens, and developer credentials enclosed in quotes.',
     remediation: 'Audit the purpose of this key, replace with a secure config loader, and rotate if exposed in git.',
-    regex: /(?:["']?(?:token|jwt(?:[._-]?(?:token|secret|key))?|secret(?:[._-]?key)?|api[._-]?(?:key|token|secret)|client[._-]?(?:secret|key)|master[._-]?key|encryption[._-]?key|signing[._-]?key|private[._-]?key|access[._-]?(?:secret|token)|webhook[._-]?secret|session[._-]?secret|auth[._-]?(?:key|token|secret)|token[._-]?secret|service[._-]?(?:key|secret))["']?)\s*(?:[:=]|=>|:=)\s*(["'`])(?!(?:["'`]*\$|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|required|invalid|must\s+be|cannot\s+be|[\^~><=]|\d+(?:px|em|rem|%|vh|vw|pt)\b|\s*\1))([^"'\r\n`]{3,})\1/gi,
+    regex: /(?:["']?(?:token|key|api[._-]?(?:key|token|secret)|access[._-]?(?:token|secret|key)|auth[._-]?(?:key|token|secret)|client[._-]?(?:secret|key|token)|bearer[._-]?token|refresh[._-]?token|jwt(?:[._-]?(?:token|secret|key))?|secret(?:[._-]?(?:key|token))?|session[._-]?(?:secret|token)|oauth[._-]?(?:token|secret)|webhook[._-]?secret|master[._-]?(?:key|secret)|encryption[._-]?(?:key|secret)|signing[._-]?(?:key|secret)|private[._-]?(?:key|secret)|token[._-]?(?:secret|key|value)|service[._-]?(?:key|secret))["']?)\s*(?:[:=]|=>|:=)\s*(["'`])(?!(?:["'`]*\$|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|required|invalid|must\s+be|cannot\s+be|[\^~><=]|\d+(?:px|em|rem|%|vh|vw|pt)\b|\s*\1))([^"'\r\n`]{3,})\1/gi,
     fileFilter: (filePath) => path.basename(filePath).toLowerCase() !== 'package.json'
   },
 
@@ -969,14 +970,57 @@ function isDescriptiveText(matchedValue) {
 }
 
 /**
- * Determines if a matched assignment is declaring a safe configuration/property/header key name,
- * rather than a real password/credential value.
- *
- * Safe examples (returns true -> suppress false positive):
- *   public static final String SOMETHIN_KEY = "some.hard.to.remeber.string";
- *   public static final String USER_KEY = "user.key";
- *   public static final String USER_KEY = "soemthing-user-somethingelse-key";
- *   const API_KEY_HEADER = "x-api-key";
+ * Determines if a value is a plain single-word mock string (e.g. "abc", "test", "token", "mock", "dummy", "admin")
+ * rather than a real API secret or password.
+ * Real secrets have numbers ("hello123"), special characters ("Welcome@123"), or long high-entropy tokens ("sk-proj-...").
+ */
+function isSingleWordOrMockToken(val) {
+  if (!val) return false;
+  const clean = val.trim().replace(/^["'`]|["'`]$/g, '');
+  // Plain alphabetic-only string (no numbers, no special symbols) with length <= 12
+  if (/^[a-zA-Z]{1,12}$/.test(clean)) {
+    return true; // Single-word mock/dummy token
+  }
+  return false;
+}
+
+/**
+ * Determines if a finding represents a standalone generic key name paired with a low-entropy or placeholder value.
+ * e.g., "token": "abc", "key": "test", token = "dummy", auth = "bearer"
+ * If BOTH key is generic single-word AND value has low entropy (< 3.2) without real password symbols -> skip!
+ */
+function isGenericKeyWithLowEntropyValue(rawMatch, lineText = '') {
+  const text = lineText || rawMatch;
+  if (!text) return false;
+
+  const assignMatch = text.match(/(?:(?:const|let|var|val|final|static|public|private|protected|readonly|String|string)\s+)?["']?([a-zA-Z0-9_$]+)["']?\s*(?:[:=]|=>|:=)\s*["'`]([^"'`]+)["'`]/);
+  if (!assignMatch) return false;
+
+  const keyName = assignMatch[1].trim().toLowerCase();
+  const value = assignMatch[2].trim();
+
+  // 1. Check if key is just a standalone generic single word (not compound like api_token, client_secret)
+  const isBareGenericKey = /^(?:token|key|secret|auth|pass|password|pwd|code|data|value|header|cookie)$/i.test(keyName);
+  if (!isBareGenericKey) return false;
+
+  // 2. Safeguard: if value is an explicit structured token (e.g. ghp_..., sk-..., eyJ..., AKIA...) or has strong password symbols (@, !, #, $, etc.)
+  if (/^(?:eyJ|AKIA|ghp_|gho_|ghu_|ghs_|ghr_|github_pat_|sk-|AIza|\$2[aby]\$)/.test(value)) {
+    return false; // Keep real token
+  }
+  if (/[@!#$^&*+=~?><]/.test(value)) {
+    return false; // Keep real password (e.g. "Welcome@123")
+  }
+
+  // 3. Evaluate Shannon entropy of the value
+  const entropy = calculateShannonEntropy(value);
+  // If entropy is low (< 3.2) or it is a short plain word (<= 12 chars without digits)
+  if (entropy < 3.2 || /^[a-zA-Z]{1,12}$/.test(value)) {
+    return true; // BOTH generic key name AND low entropy value -> Safe to skip!
+  }
+
+  return false;
+}
+
 /**
  * Splits camelCase, PascalCase, snake_case, kebab-case, or delimited strings into word tokens.
  * e.g. "DATA_CATALOG_CLIENT_SECRET_DEV" -> ["data", "catalog", "client", "secret", "dev"]
@@ -1040,10 +1084,18 @@ function isConfigKeyIdentifier(rawMatch, lineText = '', fullFileContent = '') {
   if (!strVal) return false;
 
   // -------------------------------------------------------------
+  // 0. Template Placeholders & Directory Paths (Immediate Safe Exit)
+  // -------------------------------------------------------------
+  // e.g. "%%CONN_ID%%/%%CONN_VERSION%%/Keys/", "%USER_PROFILE%/keys", "${APP_DIR}/path"
+  if (/%%[A-Z0-9_]+%%/i.test(strVal) || /^%[A-Z0-9_]+%$/i.test(strVal) || /^\$\{[A-Za-z0-9_.-]+\}$/.test(strVal) || strVal.endsWith('/')) {
+    return true; // Safe template placeholder or directory path
+  }
+
+  // -------------------------------------------------------------
   // 1. SAFEGUARD: Real password characters & known secret formats
   // -------------------------------------------------------------
-  // Special characters typical in real passwords: @, !, #, $, %, ^, &, *, +, =, ~, ?
-  if (/[@!#$%^&*+=~?><]/.test(strVal)) {
+  // Special characters typical in real passwords: @, !, #, $, ^, &, *, +, =, ~, ?
+  if (/[@!#$^&*+=~?><]/.test(strVal)) {
     return false; // Keep as real secret (e.g. "Welcome@123", "P@ssw0rd!")
   }
 
@@ -1065,10 +1117,43 @@ function isConfigKeyIdentifier(rawMatch, lineText = '', fullFileContent = '') {
   const cleanVar = varName.toUpperCase().replace(/[^A-Z0-9_]/g, '');
 
   // -------------------------------------------------------------
-  // 2. Variable Name Suffix: explicitly indicates a key/header name
+  // 2. Non-Secret Key Types in Variable Names
   // -------------------------------------------------------------
-  if (/(?:_KEY_NAME|_HEADER|_HEADER_NAME|_PROP|_PROPERTY|_PARAM|_NAME|_FIELD|_PATH|_SETTING)$/.test(cleanVar)) {
-    return true; // e.g. API_KEY_HEADER = "x-api-key", USER_KEY_NAME = "user"
+  // Matches e.g. SYS_CONTRACT_JSON_KEY_FILENAME, headerKey, USER_SESS_KEY, cacheKey, lookupKey
+  const isNonSecretKeyType = /(?:JSON_KEY|HEADER_KEY|HEADERKEY|CACHE_KEY|ROUTING_KEY|SORT_KEY|MAP_KEY|PRIMARY_KEY|FOREIGN_KEY|LOOKUP_KEY|PROPERTY_KEY|PROP_KEY|CONFIG_KEY|ATTR_KEY|ATTRIBUTE_KEY|PARAM_KEY|PARAMETER_KEY|COLUMN_KEY|FIELD_KEY|STORAGE_KEY|REDIS_KEY|KAFKA_KEY|MESSAGE_KEY|ENTITY_KEY|TRANSLATION_KEY|I18N_KEY|LOCALIZATION_KEY|COOKIE_KEY|SESS_KEY|SESSION_KEY|STATE_KEY|CONTEXT_KEY|METRIC_KEY|TAG_KEY|DIMENSION_KEY|ELEMENT_KEY|ROW_KEY|NODE_KEY|EVENT_KEY|TYPE_KEY)/.test(cleanVar);
+  if (isNonSecretKeyType) {
+    return true; // Safe non-secret structural key name
+  }
+
+  // -------------------------------------------------------------
+  // 2.1 Variable Name Suffix: explicitly indicates a key/header/url/path/cookie/file name
+  // -------------------------------------------------------------
+  if (/(?:_KEY_NAME|_HEADER|_HEADER_NAME|_COOKIE|_COOKIE_NAME|_PROP|_PROPERTY|_PARAM|_NAME|_FIELD|_PATH|_SETTING|_URL|_URI|_ENDPOINT|_ROUTE|_LOC|_LOCATION|_DIR|_DIRECTORY|_FOLDER|_FILE|_FILE_LOC|_QUERY_PARAM|_ATTR|_ATTRIBUTE|_PREFIX|_SUFFIX|_PATTERN|_FORMAT|_FILENAME|_FILEPATH|_FILE_PATH|_FILE_NAME|_EXTENSION|_REQUEST_TYPE|_RESPONSE_TYPE|_CONTENT_TYPE|_MEDIA_TYPE|_MIME_TYPE|_TYPE|_DETAILS|_COUNT|_INDEX|_CODE_TEMPLATE)$/.test(cleanVar)) {
+    return true; // e.g. API_KEY_HEADER = "x-api-key", JWT_ACCESS_TOKEN_COOKIE = "DQP.AccessToken", API_AUTH_URL = "/dqp-auth-service/...", CONN_KEY_LOC = "%%CONN_ID%%/...", SYS_CONTRACT_JSON_KEY_FILENAME = "assessmentFileName"
+  }
+
+  // -------------------------------------------------------------
+  // 2.2 Value Content Shape: HTTP Headers, URLs, Routes, & Uppercase Constants
+  // -------------------------------------------------------------
+  // Standard HTTP Header values (e.g. "Content-Disposition", "Content-Type", "X-Forwarded-For")
+  if (/^[A-Z][a-zA-Z0-9]*(-[A-Z][a-zA-Z0-9]*)+$/.test(strVal) || /^(?:Content-Disposition|Content-Type|Authorization|Accept|User-Agent|Cache-Control|Origin|Host)$/i.test(strVal)) {
+    return true; // Safe HTTP header name
+  }
+
+  // Uppercase constant attribute / header / property names (e.g. "SM_USER", "SM_SERVERSESSIONID", "SM_USER_ROLE_DETAILS")
+  if (/^[A-Z][A-Z0-9_]{2,}$/.test(strVal)) {
+    return true; // Safe uppercase constant identifier / attribute name
+  }
+
+  // URLs and API endpoint route paths (e.g. "/dqp-auth-service/entitlement/validateRequest", "https://api.example.com/v1/auth")
+  if (/^\/(?:[a-zA-Z0-9_.-]+\/)*[a-zA-Z0-9_.-]*$/.test(strVal) || /^(?:https?|wss?|ftp):\/\//i.test(strVal)) {
+    return true; // Safe URL endpoint / route path
+  }
+
+  // Filesystem directory paths, path templates, or folder locations
+  // e.g. "%%CONN_ID%%/%%CONN_VERSION%%/Keys/", "c:/temp/csionboard/", "/var/log/app/"
+  if (strVal.endsWith('/') || /%%[A-Z0-9_]+%%/i.test(strVal) || /^\{[A-Z0-9_]+\}/i.test(strVal) || /^[a-zA-Z]:[\\/]/i.test(strVal)) {
+    return true; // Safe filesystem directory / path template
   }
 
   // -------------------------------------------------------------
@@ -1081,15 +1166,15 @@ function isConfigKeyIdentifier(rawMatch, lineText = '', fullFileContent = '') {
     return true; // e.g. USER_KEY = "user.key" or "user-key" or "userKey"
   }
 
-  // Token-level overlap (handles camelCase e.g. DATA_CATALOG_CLIENT_SECRET_DEV vs "devClientSecret")
+  // Token-level overlap (handles camelCase e.g. DATA_CATALOG_CLIENT_SECRET_DEV vs "devClientSecret", SYS_CONTRACT_JSON_KEY_FILENAME vs "assessmentFileName")
   const varWords = splitIntoWords(varName);
   const valWords = splitIntoWords(strVal);
 
   if (valWords.length >= 1 && varWords.length >= 1) {
     const matchingCount = valWords.filter(w => varWords.includes(w)).length;
-    // If all value words are in the variable name, or >= 60% overlap
-    if (matchingCount === valWords.length || (valWords.length >= 2 && (matchingCount / valWords.length) >= 0.6)) {
-      return true; // Safe constant alias / key name (e.g. devClientSecret, uatClientSecret, prodClientSecret)
+    // If all value words are in the variable name, or >= 50% overlap
+    if (matchingCount === valWords.length || (valWords.length >= 2 && (matchingCount / valWords.length) >= 0.5)) {
+      return true; // Safe constant alias / key name
     }
   }
 
@@ -1302,11 +1387,16 @@ function getFindingPriorityScore(f) {
  * Checks whether two findings in the same file represent the same issue / overlap.
  */
 function areFindingsOverlapping(a, b) {
-  const fileA = a.absolutePath || a.file;
-  const fileB = b.absolutePath || b.file;
+  const fileA = path.normalize(a.absolutePath || a.file || '').toLowerCase();
+  const fileB = path.normalize(b.absolutePath || b.file || '').toLowerCase();
   if (fileA !== fileB) return false;
 
-  // 1. Character index range overlap (most accurate)
+  // 1. Line-level overlap: if two findings are on the same line in the same file, they represent the same statement
+  if (a.line && b.line && a.line === b.line) {
+    return true;
+  }
+
+  // 2. Character index range overlap (most accurate for multiline or exact character positions)
   if (typeof a.startIndex === 'number' && typeof a.endIndex === 'number' &&
       typeof b.startIndex === 'number' && typeof b.endIndex === 'number') {
     // If the match ranges overlap
@@ -1317,34 +1407,6 @@ function areFindingsOverlapping(a, b) {
     if (typeof a.secretStartIndex === 'number' && typeof a.secretEndIndex === 'number' &&
         typeof b.secretStartIndex === 'number' && typeof b.secretEndIndex === 'number') {
       if (Math.max(a.secretStartIndex, b.secretStartIndex) < Math.min(a.secretEndIndex, b.secretEndIndex)) {
-        return true;
-      }
-    }
-  }
-
-  // 2. Line-level overlap checks
-  if (a.line && b.line && a.line === b.line) {
-    // Same column
-    if (a.column && b.column && a.column === b.column) {
-      return true;
-    }
-
-    // Substring or identical secret match on the same line
-    if (a.rawSecret && b.rawSecret) {
-      const cleanA = a.rawSecret.trim();
-      const cleanB = b.rawSecret.trim();
-      if (cleanA === cleanB || cleanA.includes(cleanB) || cleanB.includes(cleanA)) {
-        return true;
-      }
-    }
-
-    // Approximate column overlap on the same line
-    if (a.column && b.column && a.rawSecret && b.rawSecret) {
-      const aLen = (typeof a.endIndex === 'number' && typeof a.startIndex === 'number') ? (a.endIndex - a.startIndex) : (a.rawSecret ? a.rawSecret.length : 1);
-      const bLen = (typeof b.endIndex === 'number' && typeof b.startIndex === 'number') ? (b.endIndex - b.startIndex) : (b.rawSecret ? b.rawSecret.length : 1);
-      const aEndCol = a.column + aLen;
-      const bEndCol = b.column + bLen;
-      if (Math.max(a.column, b.column) < Math.min(aEndCol, bEndCol)) {
         return true;
       }
     }
@@ -1694,6 +1756,17 @@ function scanSingleFile(fullPath, rootDir, findings, stats) {
           secretStartIndex = matchIndex + groupOffset;
           secretEndIndex = secretStartIndex + matchedSecretValue.length;
         }
+      } else {
+        // Fallback: extract the RHS quoted literal from assignment expressions
+        const valMatch = rawMatch.match(/[:=]\s*["'`]([^"'`]+)["'`]/);
+        if (valMatch && valMatch[1]) {
+          matchedSecretValue = valMatch[1].trim();
+          const groupOffset = rawMatch.indexOf(valMatch[1]);
+          if (groupOffset !== -1) {
+            secretStartIndex = matchIndex + groupOffset;
+            secretEndIndex = secretStartIndex + valMatch[1].length;
+          }
+        }
       }
 
       // Global Gitleaks [allowlist] checks
@@ -1741,15 +1814,21 @@ function scanSingleFile(fullPath, rootDir, findings, stats) {
         }
       }
 
-      // FP-3: Skip descriptive text (4+ words or validation keywords) for assignment-based rules
+      // FP-3: Skip descriptive text (4+ words or validation keywords) or single-word mock tokens for assignment-based rules
       const assignmentRules = ['HARDCODED_PASSWORD_ASSIGN', 'GENERIC_DEV_SECRET', 'TYPED_PASSWORD_DECLARATION', 'DB_CONFIG_PASSWORD_KEY'];
-      if (assignmentRules.includes(pattern.id) && isDescriptiveText(rawMatch)) {
+      if (assignmentRules.includes(pattern.id) && (isDescriptiveText(rawMatch) || isSingleWordOrMockToken(matchedSecretValue))) {
+        if (pattern.regex.lastIndex === matchIndex) pattern.regex.lastIndex++;
+        continue;
+      }
+
+      // FP-3.1: Skip generic standalone single-word keys ("token", "key", "secret", "auth") with low-entropy/mock values
+      const matchingLine = content.split(/\r?\n/)[lineNo - 1] || '';
+      if (isGenericKeyWithLowEntropyValue(rawMatch, matchingLine)) {
         if (pattern.regex.lastIndex === matchIndex) pattern.regex.lastIndex++;
         continue;
       }
 
       // FP-4: Skip safe configuration/property/header key names (e.g. USER_KEY = "user.key", SOMETHIN_KEY = "some.hard.to.remeber.string")
-      const matchingLine = content.split(/\r?\n/)[lineNo - 1] || '';
       if (isConfigKeyIdentifier(rawMatch, matchingLine, content)) {
         if (pattern.regex.lastIndex === matchIndex) pattern.regex.lastIndex++;
         continue;
