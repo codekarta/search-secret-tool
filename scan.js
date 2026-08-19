@@ -246,7 +246,7 @@ const PATTERNS = [
     severity: 'HIGH',
     description: 'Matches database password keys in configuration files (Spring, Quarkus, .properties, .yaml, .ini).',
     remediation: 'Replace plaintext values with environment variable place-holders like ${DB_PASSWORD}.',
-    regex: /(?:datasource|jdbc|db|database|spring\.datasource|oracle|mssql|sqlserver|db2|h2|sqlite|mysql|mariadb|postgres|postgresql|mongodb|redis|cassandra|clickhouse|keystore|truststore)[._-](?:pass(?:word|wd)|pwd|pass[._-]?code|access[._-]?code)\s*=\s*(?!(?:["'`]*\$|#|\s*$|change[_-]?me|your[_-]|example|dummy|placeholder))[^\s#]{3,}/gi,
+    regex: /(?:datasource|jdbc|db|database|spring\.datasource|oracle|mssql|sqlserver|db2|h2|sqlite|mysql|mariadb|postgres|postgresql|mongodb|redis|cassandra|clickhouse|keystore|truststore)[._-](?:pass(?:word|wd)|pwd|pass[._-]?code|access[._-]?code)\s*[:=]\s*(?!(?:["'`]*\$|#|\s*$|change[_-]?me|your[_-]|example|dummy|placeholder))[^\s#]{3,}/gi,
     fileFilter: (filePath) => {
       const ext = path.extname(filePath).toLowerCase();
       const base = path.basename(filePath).toLowerCase();
@@ -262,7 +262,7 @@ const PATTERNS = [
     severity: 'HIGH',
     description: 'Matches variable/key assignments targeting passwords, passcodes, passphrases, and credentials enclosed in quotes.',
     remediation: 'Load credentials dynamically from environment variables or a configuration vault.',
-    regex: /(?<!(?:errors?|err|validation|state|msg|message|alert|warning|label|placeholder|title|desc|description)\.)(?:["']?(?:pass(?:word|wd)|pwd|pass[._-]?phrase|pass[._-]?code|access[._-]?code|db[._-]?(?:pass(?:word|wd)?|pwd)|user[._-]?(?:pass(?:word|wd)?|pwd)|admin[._-]?(?:pass(?:word|wd)?|pwd)|root[._-]?(?:pass(?:word|wd)?|pwd)|master[._-]?(?:pass(?:word|wd)?|pwd)|client[._-]?(?:pass(?:word|wd)?|pwd)|auth[._-]?(?:pass(?:word|wd)?|pwd)|keystore[._-]?(?:pass(?:word|wd)?|pwd)|truststore[._-]?(?:pass(?:word|wd)?|pwd))["']?)\s*(?:[:=]|=>|:=)\s*(["'`])(?!(?:["'`]*\$|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|[^\r\n"']*(?:required|invalid|must\s+be|cannot\s+be|characters|match)|[\^~><=]|\d+(?:px|em|rem|%|vh|vw|pt)\b|\s*\1))([^\r\n\1]{3,})\1/gi,
+    regex: /(?<!(?:errors?|err|validation|state|msg|message|alert|warning|label|placeholder|title|desc|description)\.)(?:["']?(?:pass(?:word|wd)|pwd|pass[._-]?phrase|pass[._-]?code|access[._-]?code|db[._-]?(?:pass(?:word|wd)?|pwd)|user[._-]?(?:pass(?:word|wd)?|pwd)|admin[._-]?(?:pass(?:word|wd)?|pwd)|root[._-]?(?:pass(?:word|wd)?|pwd)|master[._-]?(?:pass(?:word|wd)?|pwd)|client[._-]?(?:pass(?:word|wd)?|pwd)|auth[._-]?(?:pass(?:word|wd)?|pwd)|keystore[._-]?(?:pass(?:word|wd)?|pwd)|truststore[._-]?(?:pass(?:word|wd)?|pwd))["']?)\s*(?:[:=]|=>|:=)\s*(["'`])(?!(?:["'`]*\$|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|[^\r\n"']*(?:required|invalid|must\s+be|cannot\s+be|characters|match)|[\^~><=]|\d+(?:px|em|rem|%|vh|vw|pt)\b|\s*\1))([^"'\r\n`]{3,})\1/gi,
     fileFilter: (filePath) => path.basename(filePath).toLowerCase() !== 'package.json'
   },
   {
@@ -364,9 +364,55 @@ const PATTERNS = [
     name: 'Artifactory / JFrog / Nexus Token',
     category: 'Cloud & SaaS API Keys',
     severity: 'HIGH',
-    description: 'Matches JFrog/Artifactory API keys (AKCP8...), reference tokens (cmVmdHsk...), and package repository credential variables.',
+    description: 'Matches JFrog/Artifactory API keys (AKCp...), reference tokens (cmVmd...), scoped access tokens, Nexus credentials, and package repository credential variables.',
     remediation: 'Revoke and rotate package registry tokens and configure credentials via ~/.npmrc or ~/.m2/settings.xml using CI secrets.',
-    regex: /\bAKCP8[a-zA-Z0-9]{60}\b|\bcmVmdHsk[a-zA-Z0-9+/=]{60,}\b|(?:artifactory|jfrog|nexus)[._-]*(?:api[._-]*)?(?:key|token|password|secret)\s*[:=]\s*["'](?!(?:["'`]*\$|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))[a-zA-Z0-9_\-\.\+/=]{10,}["']/gi
+    regex: /\bAKCp[a-zA-Z0-9]{60,80}\b|\bcmVmd[a-zA-Z0-9+/=]{59,}\b|\bjfx_[a-zA-Z0-9_\-]{30,}\b|(?:artifactory|jfrog|nexus|bintray)[._-]*(?:api[._-]*)?(?:key|token|password|secret|pwd)\s*[:=]\s*["']?(?!(?:["'`]*\$|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))[a-zA-Z0-9_\-\.\+/=]{8,}["']?|<(?:artifactory|jfrog|nexus)[._-]*(?:api[._-]*)?(?:key|token|password|secret|pwd)\b[^>]*>(?!(?:["'`]*\$|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*<))([^<\r\n]{6,})<\/(?:artifactory|jfrog|nexus)[._-]*(?:api[._-]*)?(?:key|token|password|secret|pwd)>/gi
+  },
+  {
+    id: 'XML_CONFIG_CREDENTIAL',
+    name: 'XML / Ant Build Configuration Password or Secret',
+    category: 'Passwords & Credentials',
+    severity: 'HIGH',
+    description: 'Matches passwords, API keys, tokens, keystore passwords, and secrets configured inside XML and build elements (Ant build.xml, Ivy ivysettings.xml, Maven settings.xml, pom.xml, Spring XML, Jenkins credentials, ASP.NET Web.config, NuGet.config, Tomcat server.xml).',
+    remediation: 'Externalize credentials from XML files using environment variable placeholders (e.g. ${env.PASSWORD}) or a centralized secrets store.',
+    regex: /<(?:password|passwd|passphrase|secret(?:[._-]?key)?|api[._-]?(?:key|token)|client[._-]?secret|access[._-]?(?:key|secret|token)|auth[._-]?(?:token|secret|key)|private[._-]?key|master[._-]?password|proxy[._-]?password|keystore[._-]?password|truststore[._-]?password|storepass|keypass|bind[._-]?password|db[._-]?password|connection[._-]?password|artifactory[._-]?(?:key|token|password)|jfrog[._-]?(?:key|token|password)|nexus[._-]?(?:key|token|password))\b[^>]*>(?!(?:["'`]*\$|\{\{|\{\#[^}]*\}|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*<))([^<\r\n]{3,})<\/(?:password|passwd|passphrase|secret(?:[._-]?key)?|api[._-]?(?:key|token)|client[._-]?secret|access[._-]?(?:key|secret|token)|auth[._-]?(?:token|secret|key)|private[._-]?key|master[._-]?password|proxy[._-]?password|keystore[._-]?password|truststore[._-]?password|storepass|keypass|bind[._-]?password|db[._-]?password|connection[._-]?password|artifactory[._-]?(?:key|token|password)|jfrog[._-]?(?:key|token|password)|nexus[._-]?(?:key|token|password))>|<(?:property|param)\s+[^>]*name=["'](?:[a-zA-Z0-9._-]*(?:password|passwd|passphrase|secret|apiKey|api_key|token|accessKey|privateKey|artifactory|nexus|storepass|keypass)[a-zA-Z0-9._-]*)["']\s+value=["'](?!(?:["'`]*\$|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder))([^"'\r\n]{3,})["']|\b(?:password|passwd|passphrase|storepass|keypass|secret|apiKey|api_key|api-key|clientSecret|client_secret|accessKey|access_key|authToken|auth_token|artifactoryKey|artifactoryToken|jfrogToken|clearTextPassword)\s*=\s*(["'])(?!(?:["'`]*\$|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))([^"'\r\n]{3,})\1/gi,
+    fileFilter: (filePath) => {
+      const ext = path.extname(filePath).toLowerCase();
+      const base = path.basename(filePath).toLowerCase();
+      return ['.xml', '.config', '.pom', '.xaml', '.axml', '.plist', '.xsd', '.wsdl', '.ant', '.ivysettings'].includes(ext) ||
+             base === 'build.xml' || base === 'ivysettings.xml' || base === 'ivy.xml' || base === 'pom.xml' || base === 'settings.xml';
+    }
+  },
+  {
+    id: 'GRADLE_BUILD_CREDENTIAL',
+    name: 'Gradle Build Script Credential / Signing Password',
+    category: 'Passwords & Credentials',
+    severity: 'HIGH',
+    description: 'Matches hardcoded repository credentials, keystore passwords, API tokens, and signing secrets in Gradle build scripts (build.gradle, build.gradle.kts, settings.gradle, init.gradle).',
+    remediation: 'Externalize Gradle secrets into gradle.properties (excluded from git) or inject via environment variables (System.getenv("...")) / CI secrets.',
+    regex: /\b(?:password|passwd|passphrase|storePassword|keyPassword|secretKey|signingPassword|artifactoryPassword|nexusPassword|authToken|apiKey|apiToken|secret)\s*(?:=|:|\s)\s*(["'])(?!(?:["'`]*\$|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))([^"'\r\n]{3,})\1|\b(?:password|passwd|storePassword|keyPassword|setPassword|setStorePassword|setKeyPassword)\s*\(\s*(["'])(?!(?:["'`]*\$|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))([^"'\r\n]{3,})\1\s*\)/gi,
+    fileFilter: (filePath) => {
+      const base = path.basename(filePath).toLowerCase();
+      return base.endsWith('.gradle') || base.endsWith('.gradle.kts') || base.startsWith('gradle.properties') || base === 'build.gradle' || base === 'settings.gradle';
+    }
+  },
+  {
+    id: 'MAVEN_ENCRYPTED_PASSWORD',
+    name: 'Maven Encrypted Password / Master Password',
+    category: 'Passwords & Credentials',
+    severity: 'MEDIUM',
+    description: 'Matches Maven master passwords or encrypted server passwords ({...}) in settings.xml and settings-security.xml.',
+    remediation: 'Ensure settings-security.xml and encrypted credentials are not stored in shared repositories.',
+    regex: /<(?:password|master)\b[^>]*>(\{[a-zA-Z0-9+/=]{16,\}\})<\/(?:password|master)>/gi
+  },
+  {
+    id: 'PACKAGE_REGISTRY_CONFIG_SECRET',
+    name: 'Package Registry Config Secret (.npmrc, gradle.properties, .pypirc, NuGet)',
+    category: 'Cloud & SaaS API Keys',
+    severity: 'HIGH',
+    description: 'Matches hardcoded authentication tokens and repository credentials in .npmrc, .yarnrc, gradle.properties, .pypirc, and NuGet configuration files.',
+    remediation: 'Inject repository tokens via environment variables in CI/CD pipelines (e.g. NPM_TOKEN, ARTIFACTORY_TOKEN) rather than saving in dotfiles.',
+    regex: /(?:\/\/[^\s\/:@]+(?:\/[^\s:@]*)?:_authToken\s*=\s*|_authToken\s*=\s*|_auth\s*=\s*|_password\s*=\s*|(?:artifactory|nexus|sonatype|bintray|pypi|nuget|github|gitlab)[._-]*(?:password|pass|pwd|key|token|secret|apiKey)\s*=\s*)(?!(?:["'`]*\$|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder))[^\s#]{4,}/gi
   },
   {
     id: 'APPDYNAMICS_KEY',
@@ -386,7 +432,7 @@ const PATTERNS = [
     severity: 'HIGH',
     description: 'Matches variable/key assignments targeting secrets, API keys, JWT tokens, access tokens, and developer credentials enclosed in quotes.',
     remediation: 'Audit the purpose of this key, replace with a secure config loader, and rotate if exposed in git.',
-    regex: /(?:["']?(?:token|jwt(?:[._-]?(?:token|secret|key))?|secret(?:[._-]?key)?|api[._-]?(?:key|token|secret)|client[._-]?(?:secret|key)|master[._-]?key|encryption[._-]?key|signing[._-]?key|private[._-]?key|access[._-]?(?:secret|token)|webhook[._-]?secret|session[._-]?secret|auth[._-]?(?:key|token|secret)|token[._-]?secret|service[._-]?(?:key|secret))["']?)\s*(?:[:=]|=>|:=)\s*(["'`])(?!(?:["'`]*\$|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|required|invalid|must\s+be|cannot\s+be|[\^~><=]|\d+(?:px|em|rem|%|vh|vw|pt)\b|\s*\1))([^\r\n\1]{3,})\1/gi,
+    regex: /(?:["']?(?:token|jwt(?:[._-]?(?:token|secret|key))?|secret(?:[._-]?key)?|api[._-]?(?:key|token|secret)|client[._-]?(?:secret|key)|master[._-]?key|encryption[._-]?key|signing[._-]?key|private[._-]?key|access[._-]?(?:secret|token)|webhook[._-]?secret|session[._-]?secret|auth[._-]?(?:key|token|secret)|token[._-]?secret|service[._-]?(?:key|secret))["']?)\s*(?:[:=]|=>|:=)\s*(["'`])(?!(?:["'`]*\$|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|required|invalid|must\s+be|cannot\s+be|[\^~><=]|\d+(?:px|em|rem|%|vh|vw|pt)\b|\s*\1))([^"'\r\n`]{3,})\1/gi,
     fileFilter: (filePath) => path.basename(filePath).toLowerCase() !== 'package.json'
   },
 
@@ -463,7 +509,7 @@ const PATTERNS = [
     severity: 'HIGH',
     description: 'Matches sensitive variable names (PASS, SECRET, KEY, TOKEN) in committed .env files with values >= 6 chars.',
     remediation: 'Add .env files to .gitignore and distribute secrets via environment templates (.env.example) and CI/CD secret stores.',
-    regex: /^(?:[A-Z0-9_]*(?:PASS(?:WORD|WD)?|PASS[._-]?CODE|ACCESS[._-]?CODE|SECRET|API[._-]?KEY|TOKEN|PRIVATE[._-]?KEY|AUTH[._-]?KEY)[A-Z0-9_]*)\s*=\s*(?!(?:["'`]*\$|\{\{|#|\s*$|change[_-]?me|default|your[_-]|example|dummy|placeholder|<|TODO))[^\s#]{6,}/gm,
+    regex: /^(?:[A-Z0-9_]*(?:PASS(?:WORD|WD)?|PASS[._-]?CODE|ACCESS[._-]?CODE|SECRET|API[._-]?KEY|TOKEN|PRIVATE[._-]?KEY|AUTH[._-]?KEY|ARTIFACTORY|JFROG|NEXUS)[A-Z0-9_]*)\s*=\s*(?!(?:["'`]*\$|\{\{|#|\s*$|change[_-]?me|default|your[_-]|example|dummy|placeholder|<|TODO))[^\s#]{6,}/gm,
     fileFilter: (filePath) => {
       const base = path.basename(filePath).toLowerCase();
       return base.startsWith('.env') || filePath.endsWith('.env');
