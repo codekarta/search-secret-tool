@@ -1,5 +1,6 @@
 # Scanner Reports
-
+reports.json
+reports/reports.json
 report_*.json
 reports/report_*.json
 report_*.html
