@@ -267,12 +267,12 @@ const PATTERNS = [
   },
   {
     id: 'TYPED_PASSWORD_DECLARATION',
-    name: 'Strongly-Typed Source Password Declaration',
+    name: 'Strongly-Typed Source Password / Key Declaration',
     category: 'Passwords & Credentials',
     severity: 'HIGH',
-    description: 'Matches strongly-typed variable declarations (String, const, let, final) holding passwords in source code.',
+    description: 'Matches strongly-typed variable declarations (String, const, let, final) holding passwords or secret keys in source code.',
     remediation: 'Remove the hardcoded literal and read from config or system properties.',
-    regex: /(?:String|final|const|let|var|val)\s+(?:pass(?:word|wd)|pwd|pass[._-]?phrase|pass[._-]?code|access[._-]?code|db[._-]?(?:pass(?:word|wd)?|pwd)|user[._-]?(?:pass(?:word|wd)?|pwd)|admin[._-]?(?:pass(?:word|wd)?|pwd)|root[._-]?(?:pass(?:word|wd)?|pwd)|secret[._-]?key)\s*=\s*["'](?!(?:["'`]*\$|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))[^"'\s]{3,}["']/gi
+    regex: /(?:String|final|const|let|var|val)\s+(?:[a-zA-Z0-9_$]*(?:pass(?:word|wd)?|pwd|pass[._-]?phrase|pass[._-]?code|access[._-]?code|db[._-]?(?:pass(?:word|wd)?|pwd)|user[._-]?(?:pass(?:word|wd)?|pwd)|admin[._-]?(?:pass(?:word|wd)?|pwd)|root[._-]?(?:pass(?:word|wd)?|pwd)|secret|token|api[._-]?key|auth|credential|key)[a-zA-Z0-9_$]*)\s*=\s*["'](?!(?:["'`]*\$|\{\{|<|TODO|change[_-]?me|your[_-]|example|dummy|placeholder|\s*["']))[^"'\s]{3,}["']/gi
   },
   {
     id: 'CREDENTIAL_SETTER_CALL',
@@ -857,6 +857,134 @@ function isDescriptiveText(matchedValue) {
 }
 
 /**
+ * Determines if a matched assignment is declaring a safe configuration/property/header key name,
+ * rather than a real password/credential value.
+ *
+ * Safe examples (returns true -> suppress false positive):
+ *   public static final String SOMETHIN_KEY = "some.hard.to.remeber.string";
+ *   public static final String USER_KEY = "user.key";
+ *   public static final String USER_KEY = "soemthing-user-somethingelse-key";
+ *   const API_KEY_HEADER = "x-api-key";
+ *   public const string DB_SETTING = "Database:Connection:Password";
+ *
+ * Real secret examples (returns false -> keep as True Positive):
+ *   public static final String SOMETHIN_KEY = "Welcome@123";
+ *   public static final String USER_KEY = "hello123";
+ *   public static final String ACCESS_CODE = "hello123";
+ *   // public static final String ACCESS_CODE = "hello123";
+ *   String API_KEY = "sk-proj-abc123xyz...";
+ */
+function isConfigKeyIdentifier(rawMatch, lineText = '', fullFileContent = '') {
+  const text = lineText || rawMatch;
+  if (!text) return false;
+
+  // Extract the variable/property name before = or :
+  // e.g., 'public static final String SOMETHIN_KEY = "..."' -> 'SOMETHIN_KEY'
+  const assignMatch = text.match(/(?:(?:const|let|var|val|final|static|public|private|protected|readonly|String|string)\s+)*([a-zA-Z0-9_$]+)\s*(?:[:=]|=>|:=)\s*["'`]([^"'`]+)["'`]/);
+  
+  let varName = '';
+  let strVal = '';
+  
+  if (assignMatch) {
+    varName = assignMatch[1].trim();
+    strVal = assignMatch[2].trim();
+  } else {
+    // Fallback extraction from rawMatch
+    const valMatch = rawMatch.match(/[:=]\s*["'`]([^"'`]+)["'`]/);
+    if (!valMatch) return false;
+    strVal = valMatch[1].trim();
+    const lhs = rawMatch.split(/[:=]|=>/)[0] || '';
+    const lhsWords = lhs.match(/[a-zA-Z0-9_$]+/g);
+    if (lhsWords && lhsWords.length > 0) {
+      varName = lhsWords[lhsWords.length - 1];
+    }
+  }
+
+  if (!strVal) return false;
+
+  // -------------------------------------------------------------
+  // 1. SAFEGUARD: Real password characters & known secret formats
+  // -------------------------------------------------------------
+  // Special characters typical in real passwords: @, !, #, $, %, ^, &, *, +, =, ~, ?
+  if (/[@!#$%^&*+=~?><]/.test(strVal)) {
+    return false; // Keep as real secret (e.g. "Welcome@123", "P@ssw0rd!")
+  }
+
+  // Classic test/weak password pattern: word + digits with no dots/delimiters (e.g. "hello123", "admin123", "pass2026")
+  if (/^[a-zA-Z]{3,}\d{1,6}$/i.test(strVal)) {
+    return false; // Keep as real test password
+  }
+
+  // Known secret / token prefixes or hashes
+  if (/^(?:eyJ|AKIA|ghp_|gho_|ghu_|ghs_|ghr_|github_pat_|sk-|AIza|\$2[aby]\$)/.test(strVal)) {
+    return false; // Keep as real secret
+  }
+
+  // Pure high-entropy hex/base64 strings without word boundaries (length > 24)
+  if (/^[a-zA-Z0-9]{24,}$/.test(strVal) && !strVal.includes('.') && !strVal.includes('-') && !strVal.includes('_')) {
+    return false; // High entropy token/secret
+  }
+
+  const cleanVar = varName.toUpperCase().replace(/[^A-Z0-9_]/g, '');
+
+  // -------------------------------------------------------------
+  // 2. Variable Name Suffix: explicitly indicates a key/header name
+  // -------------------------------------------------------------
+  if (/(?:_KEY_NAME|_HEADER|_HEADER_NAME|_PROP|_PROPERTY|_PARAM|_NAME|_FIELD|_PATH|_SETTING)$/.test(cleanVar)) {
+    return true; // e.g. API_KEY_HEADER = "x-api-key", USER_KEY_NAME = "user"
+  }
+
+  // -------------------------------------------------------------
+  // 3. Exact or Substring Token Match with Variable Name
+  // -------------------------------------------------------------
+  const normalizedVar = cleanVar.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const normalizedVal = strVal.toLowerCase().replace(/[^a-z0-9]/g, '');
+  
+  if (normalizedVar === normalizedVal || (normalizedVar.length >= 4 && (normalizedVar.includes(normalizedVal) || normalizedVal.includes(normalizedVar)))) {
+    return true; // e.g. USER_KEY = "user.key" or "user-key" or "userKey"
+  }
+
+  // -------------------------------------------------------------
+  // 4. Multi-part Namespace Pattern (Dotted / Kebab / Snake / Path / Colon)
+  // -------------------------------------------------------------
+  // Matches e.g. "some.hard.to.remeber.string", "user.key", "something-user-somethingelse-key", "config:auth:token"
+  const isNamespacePattern = /^[a-z0-9]+(?:[._\-\/:][a-z0-9]+)+$/i.test(strVal);
+  if (isNamespacePattern) {
+    const tokens = strVal.toLowerCase().split(/[._\-\/:]+/).filter(Boolean);
+    // Tokens must be plain words / identifiers, not random mixed hex
+    const allCleanWords = tokens.every(t => /^[a-z]{1,25}$/i.test(t) || /^\d{1,4}$/.test(t));
+    
+    if (allCleanWords) {
+      // If it has 2+ delimiters (e.g. 3+ tokens like "some.hard.to.remeber.string", "a.b.c"), it is a property path
+      if (tokens.length >= 3) {
+        return true;
+      }
+      // If it has 1 delimiter (e.g. "user.key"), check if at least one token overlaps with variable name
+      const varTokens = cleanVar.toLowerCase().split('_').filter(t => t.length >= 2);
+      const hasTokenOverlap = tokens.some(t => varTokens.includes(t));
+      if (hasTokenOverlap) {
+        return true;
+      }
+    }
+  }
+
+  // -------------------------------------------------------------
+  // 5. File Usage Context Check: Passed as lookup key
+  // -------------------------------------------------------------
+  if (fullFileContent && cleanVar && cleanVar.length >= 3) {
+    const lookupPattern = new RegExp(
+      `(?:(?:get|getProperty|getString|getSetting|read|find|has|contains|remove|getItem|setItem|setHeader|getHeader|header)\\s*\\([^)]*\\b${cleanVar}\\b|\\b\\[\\s*${cleanVar}\\s*\\])`,
+      'g'
+    );
+    if (lookupPattern.test(fullFileContent)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Returns source note text based on the sourceType.
  */
 function getSourceNote(sourceType) {
@@ -1210,6 +1338,13 @@ function scanSingleFile(fullPath, rootDir, findings, stats) {
         continue;
       }
 
+      // FP-4: Skip safe configuration/property/header key names (e.g. USER_KEY = "user.key", SOMETHIN_KEY = "some.hard.to.remeber.string")
+      const matchingLine = content.split(/\r?\n/)[lineNo - 1] || '';
+      if (isConfigKeyIdentifier(rawMatch, matchingLine, content)) {
+        if (pattern.regex.lastIndex === matchIndex) pattern.regex.lastIndex++;
+        continue;
+      }
+
       // Log statement FP filter: skip if secret keyword only appears inside quoted strings (descriptive messages)
       if (pattern.id === 'SECRET_IN_LOG_STATEMENT' && !isLogStatementLoggingSecret(rawMatch)) {
         if (pattern.regex.lastIndex === matchIndex) pattern.regex.lastIndex++;
@@ -1217,7 +1352,6 @@ function scanSingleFile(fullPath, rootDir, findings, stats) {
       }
 
       // Detect if the matching line is commented out
-      const matchingLine = content.split(/\r?\n/)[lineNo - 1] || '';
       const commentedOut = isCommentLine(matchingLine);
 
       // Determine effective category — reclassify test file findings

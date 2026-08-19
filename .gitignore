@@ -1,0 +1,10 @@
+# Scanner Reports
+
+report_*.json
+reports/report_*.json
+report_*.html
+reports/report_*.html
+secret-scan-report*.html
+
+# OS Metadata
+.DS_Store
