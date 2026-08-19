@@ -1041,22 +1041,178 @@ function isLogStatementLoggingSecret(matchedText) {
 }
 
 /**
- * Deduplicates findings that match at the same file:line:column.
- * Keeps the finding with the highest severity (most specific rule wins).
+ * Generic rule IDs that have lower specificity than specialized token/service rules.
  */
-function deduplicateFindings(findings) {
-  const seen = new Map();
-  for (const f of findings) {
-    const key = `${f.file}:${f.line}:${f.column}`;
-    const existing = seen.get(key);
-    if (!existing || SEVERITY_LEVELS[f.severity] > SEVERITY_LEVELS[existing.severity]) {
-      seen.set(key, f);
+const GENERIC_RULE_IDS = new Set([
+  'GENERIC_DEV_SECRET',
+  'HARDCODED_PASSWORD_ASSIGN',
+  'TYPED_PASSWORD_DECLARATION',
+  'SECRET_KEYWORD_GENERIC',
+  'HIGH_ENTROPY_STRING',
+  'GENERIC_API_KEY',
+  'GENERIC_LLM_KEY_ASSIGN',
+  'SECRET_IN_LOG_STATEMENT',
+  'COMMITTED_ENV_SECRET',
+  'TOML_GENERIC_API_KEY',
+  'TOML_GENERIC_API_TOKEN'
+]);
+
+/**
+ * Calculates a priority/quality score for a finding.
+ * Higher score means the finding is more specific, higher severity, and more accurate.
+ */
+function getFindingPriorityScore(f) {
+  let score = 0;
+
+  // 1. Base severity weight (CRITICAL: 4000, HIGH: 3000, MEDIUM: 2000, LOW: 1000)
+  const sevWeight = SEVERITY_LEVELS[f.severity] || 0;
+  score += sevWeight * 1000;
+
+  // 2. Specific rule vs Generic rule (+500 for specific)
+  const isGeneric = GENERIC_RULE_IDS.has(f.ruleId) ||
+                    (f.ruleId && f.ruleId.toLowerCase().includes('generic')) ||
+                    (f.ruleName && f.ruleName.toLowerCase().includes('generic'));
+  if (!isGeneric) {
+    score += 500;
+  }
+
+  // 3. Specialized category weight (Cloud/DB/SaaS > General Passwords)
+  if (f.category && !f.category.toLowerCase().includes('password') && !f.category.toLowerCase().includes('general')) {
+    score += 150;
+  }
+
+  // 4. TOML / Gitleaks dedicated rule
+  if (f.ruleId && f.ruleId.startsWith('TOML_') && !isGeneric) {
+    score += 100;
+  }
+
+  // 5. Clean / precise secret extraction bonus (if it's not the whole assignment expression)
+  if (f.rawSecret) {
+    const raw = f.rawSecret.trim();
+    if (!raw.includes('=') && !raw.startsWith('const ') && !raw.startsWith('let ') && !raw.startsWith('var ') && !raw.startsWith('public ')) {
+      score += 50;
     }
   }
-  // Re-assign sequential IDs
-  const deduped = [...seen.values()];
-  deduped.forEach((f, idx) => { f.id = `SEC-${idx + 1}`; });
-  return deduped;
+
+  return score;
+}
+
+/**
+ * Checks whether two findings in the same file represent the same issue / overlap.
+ */
+function areFindingsOverlapping(a, b) {
+  const fileA = a.absolutePath || a.file;
+  const fileB = b.absolutePath || b.file;
+  if (fileA !== fileB) return false;
+
+  // 1. Character index range overlap (most accurate)
+  if (typeof a.startIndex === 'number' && typeof a.endIndex === 'number' &&
+      typeof b.startIndex === 'number' && typeof b.endIndex === 'number') {
+    // If the match ranges overlap
+    if (Math.max(a.startIndex, b.startIndex) < Math.min(a.endIndex, b.endIndex)) {
+      return true;
+    }
+    // Also check secret-specific ranges if defined
+    if (typeof a.secretStartIndex === 'number' && typeof a.secretEndIndex === 'number' &&
+        typeof b.secretStartIndex === 'number' && typeof b.secretEndIndex === 'number') {
+      if (Math.max(a.secretStartIndex, b.secretStartIndex) < Math.min(a.secretEndIndex, b.secretEndIndex)) {
+        return true;
+      }
+    }
+  }
+
+  // 2. Line-level overlap checks
+  if (a.line && b.line && a.line === b.line) {
+    // Same column
+    if (a.column && b.column && a.column === b.column) {
+      return true;
+    }
+
+    // Substring or identical secret match on the same line
+    if (a.rawSecret && b.rawSecret) {
+      const cleanA = a.rawSecret.trim();
+      const cleanB = b.rawSecret.trim();
+      if (cleanA === cleanB || cleanA.includes(cleanB) || cleanB.includes(cleanA)) {
+        return true;
+      }
+    }
+
+    // Approximate column overlap on the same line
+    if (a.column && b.column && a.rawSecret && b.rawSecret) {
+      const aLen = (typeof a.endIndex === 'number' && typeof a.startIndex === 'number') ? (a.endIndex - a.startIndex) : (a.rawSecret ? a.rawSecret.length : 1);
+      const bLen = (typeof b.endIndex === 'number' && typeof b.startIndex === 'number') ? (b.endIndex - b.startIndex) : (b.rawSecret ? b.rawSecret.length : 1);
+      const aEndCol = a.column + aLen;
+      const bEndCol = b.column + bLen;
+      if (Math.max(a.column, b.column) < Math.min(aEndCol, bEndCol)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Deduplicates findings that match the same secret or overlapping code locations.
+ * Uses Greedy Best-First Selection (Non-Maximum Suppression) so that the most
+ * specific, highest-severity rule wins and suppresses duplicate detections of the same issue.
+ */
+function deduplicateFindings(findings) {
+  if (!findings || findings.length === 0) return [];
+
+  // Group findings by file
+  const byFile = new Map();
+  findings.forEach((f, index) => {
+    const filePath = f.absolutePath || f.file;
+    if (!byFile.has(filePath)) {
+      byFile.set(filePath, []);
+    }
+    byFile.get(filePath).push({
+      ...f,
+      _originalIndex: index,
+      _score: getFindingPriorityScore(f)
+    });
+  });
+
+  const finalFindings = [];
+
+  for (const [, fileFindings] of byFile) {
+    // Sort candidate findings by priority score descending, then by position
+    fileFindings.sort((a, b) => {
+      if (b._score !== a._score) {
+        return b._score - a._score; // Highest score first
+      }
+      return a._originalIndex - b._originalIndex; // Stable tie breaker
+    });
+
+    const accepted = [];
+
+    for (const candidate of fileFindings) {
+      // Check if candidate overlaps with any already accepted finding in this file
+      const overlaps = accepted.some(acceptedFinding => areFindingsOverlapping(candidate, acceptedFinding));
+      if (!overlaps) {
+        accepted.push(candidate);
+      }
+    }
+
+    // Sort accepted findings by file location (line, then column, then startIndex)
+    accepted.sort((a, b) => {
+      if (a.line !== b.line) return a.line - b.line;
+      if (a.column !== b.column) return a.column - b.column;
+      return (a.startIndex || 0) - (b.startIndex || 0);
+    });
+
+    finalFindings.push(...accepted);
+  }
+
+  // Clean internal tracking fields & re-assign sequential IDs
+  return finalFindings.map((f, idx) => {
+    const { _originalIndex, _score, ...cleaned } = f;
+    return {
+      ...cleaned,
+      id: `SEC-${idx + 1}`
+    };
+  });
 }
 function maskValue(value) {
   if (!value) return '****';
@@ -1322,13 +1478,21 @@ function scanSingleFile(fullPath, rootDir, findings, stats) {
     while ((match = pattern.regex.exec(scanContent)) !== null) {
       const rawMatch = match[0];
       const matchIndex = match.index;
+      const matchEndIndex = matchIndex + rawMatch.length;
       const { lineNo, colNo } = getLineAndColumn(content, matchIndex);
       const contextLines = extractContextLines(content, lineNo, 2);
 
       // Extract precise secret value if secretGroup is defined
       let matchedSecretValue = rawMatch;
+      let secretStartIndex = matchIndex;
+      let secretEndIndex = matchEndIndex;
       if (pattern.secretGroup && match[pattern.secretGroup]) {
         matchedSecretValue = match[pattern.secretGroup];
+        const groupOffset = rawMatch.indexOf(matchedSecretValue);
+        if (groupOffset !== -1) {
+          secretStartIndex = matchIndex + groupOffset;
+          secretEndIndex = secretStartIndex + matchedSecretValue.length;
+        }
       }
 
       // FP-3: Skip descriptive text (4+ words or validation keywords) for assignment-based rules
@@ -1372,6 +1536,10 @@ function scanSingleFile(fullPath, rootDir, findings, stats) {
         absolutePath: fullPath,
         line: lineNo,
         column: colNo,
+        startIndex: matchIndex,
+        endIndex: matchEndIndex,
+        secretStartIndex: secretStartIndex,
+        secretEndIndex: secretEndIndex,
         rawSecret: matchedSecretValue,
         maskedSecret: maskValue(matchedSecretValue),
         context: contextLines,
